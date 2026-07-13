@@ -1,0 +1,382 @@
+<!--
+  Día del Cliente 2026 — Empaques Belén
+  Plantilla del correo con las entradas. Se carga desde Codigo.gs con
+  HtmlService.createTemplateFromFile('plantilla-email').
+
+  IMPORTANTE (Apps Script): en el editor este archivo debe llamarse EXACTAMENTE
+  "plantilla-email" (tipo HTML). Variables que recibe desde Codigo.gs:
+    reservation  { fullName, companyName, clientCode, agentName, dayLabel, dayLetter, hour, masterclass }
+    tickets      [ { serial, holderName, holderType, holderTypeLabel, cid } ]
+    hourRange    '10:00 — 11:00'
+    eventHours   '9:00am 4:00pm'
+    tagline      'Conexiones que impulsan'
+
+  Maquetado con TABLAS y estilos EN LÍNEA a propósito: es lo único que renderizan
+  bien a la vez Gmail, Outlook (Word engine) y Apple Mail. Ancho máximo 600px.
+  Los QR se referencian con cid: (inlineImages de GmailApp).
+-->
+<table
+  role="presentation"
+  cellpadding="0"
+  cellspacing="0"
+  border="0"
+  width="100%"
+  style="margin:0; padding:0; background-color:#FBF9F6;"
+>
+  <tr>
+    <td align="center" style="padding:24px 12px; font-family:'Poppins','Segoe UI',Arial,sans-serif;">
+      <!-- ================= CONTENEDOR 600px ================= -->
+      <table
+        role="presentation"
+        cellpadding="0"
+        cellspacing="0"
+        border="0"
+        width="600"
+        style="width:600px; max-width:600px; background-color:#ffffff; border-radius:16px; overflow:hidden; border:1px solid #e6e2dc;"
+      >
+        <!-- ---------- CABECERA ---------- -->
+        <tr>
+          <td
+            align="center"
+            style="background-color:#1B3B8B; padding:28px 24px 22px 24px; font-family:'Poppins','Segoe UI',Arial,sans-serif;"
+          >
+            <div
+              style="color:#ffffff; font-size:14px; font-weight:700; letter-spacing:3px; text-transform:uppercase;"
+            >
+              Día del
+            </div>
+            <div
+              style="color:#F26A21; font-size:32px; font-weight:800; letter-spacing:4px; text-transform:uppercase; line-height:1.15; padding-top:2px;"
+            >
+              Cliente
+            </div>
+            <div
+              style="color:#ffffff; font-size:18px; font-weight:700; letter-spacing:8px; padding-top:4px;"
+            >
+              2026
+            </div>
+            <div
+              style="color:#ffffff; opacity:0.85; font-size:13px; font-style:italic; padding-top:10px;"
+            >
+              <?= tagline ?>
+            </div>
+          </td>
+        </tr>
+
+        <!-- Franja naranja -->
+        <tr>
+          <td style="height:5px; background-color:#F26A21; font-size:0; line-height:0;">&nbsp;</td>
+        </tr>
+
+        <!-- ---------- SALUDO ---------- -->
+        <tr>
+          <td style="padding:28px 28px 8px 28px; font-family:'Poppins','Segoe UI',Arial,sans-serif;">
+            <h1
+              style="margin:0 0 10px 0; color:#1B3B8B; font-size:20px; font-weight:800; text-transform:uppercase; letter-spacing:1px;"
+            >
+              ¡Tu reserva está confirmada!
+            </h1>
+            <p style="margin:0; color:#101828; font-size:15px; line-height:1.6;">
+              Hola <strong><?= reservation.fullName ?></strong>, te esperamos en el
+              <strong>Día del Cliente 2026</strong> de Empaques Belén. Abajo encontrarás
+              <?= tickets.length === 1 ? 'tu entrada' : 'tus entradas' ?> con
+              <?= tickets.length === 1 ? 'el código QR' : 'los códigos QR' ?> que debes presentar
+              en la puerta.
+            </p>
+          </td>
+        </tr>
+
+        <!-- ---------- DATOS DE LA CITA ---------- -->
+        <tr>
+          <td style="padding:20px 28px 4px 28px;">
+            <table
+              role="presentation"
+              cellpadding="0"
+              cellspacing="0"
+              border="0"
+              width="100%"
+              style="background-color:#FBF9F6; border:1px solid #dfe4f2; border-radius:12px; font-family:'Poppins','Segoe UI',Arial,sans-serif;"
+            >
+              <tr>
+                <td style="padding:18px 20px;">
+                  <div
+                    style="color:#1B3B8B; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:2px; padding-bottom:12px;"
+                  >
+                    Datos de tu cita
+                  </div>
+
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                    <tr>
+                      <td
+                        width="42%"
+                        style="padding:5px 0; color:#5b6478; font-size:13px; font-weight:600;"
+                      >
+                        Empresa
+                      </td>
+                      <td style="padding:5px 0; color:#101828; font-size:13px; font-weight:700;">
+                        <?= reservation.companyName ?>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:5px 0; color:#5b6478; font-size:13px; font-weight:600;">
+                        Código de cliente
+                      </td>
+                      <td style="padding:5px 0; color:#101828; font-size:13px; font-weight:700;">
+                        <?= reservation.clientCode ?>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:5px 0; color:#5b6478; font-size:13px; font-weight:600;">
+                        Agente de ventas
+                      </td>
+                      <td style="padding:5px 0; color:#101828; font-size:13px; font-weight:700;">
+                        <?= reservation.agentName ?>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:5px 0; color:#5b6478; font-size:13px; font-weight:600;">
+                        Día
+                      </td>
+                      <td style="padding:5px 0; color:#101828; font-size:13px; font-weight:700;">
+                        <?= reservation.dayLabel ?>
+                        <? if (reservation.dayLetter) { ?>
+                        <span
+                          style="display:inline-block; background-color:#F26A21; color:#ffffff; font-size:11px; font-weight:800; width:18px; height:18px; line-height:18px; text-align:center; border-radius:9px; margin-left:4px;"
+                          ><?= reservation.dayLetter ?></span
+                        >
+                        <? } ?>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:5px 0; color:#5b6478; font-size:13px; font-weight:600;">
+                        Hora de tu cita
+                      </td>
+                      <td style="padding:5px 0; color:#101828; font-size:13px; font-weight:700;">
+                        <?= hourRange ?>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="padding:5px 0; color:#5b6478; font-size:13px; font-weight:600;">
+                        Horario del evento
+                      </td>
+                      <td style="padding:5px 0; color:#101828; font-size:13px; font-weight:700;">
+                        <?= eventHours ?>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- ---------- NOTA DE LA MASTERCLASS (solo si aplica) ---------- -->
+        <? if (reservation.masterclass) { ?>
+        <tr>
+          <td style="padding:16px 28px 0 28px;">
+            <table
+              role="presentation"
+              cellpadding="0"
+              cellspacing="0"
+              border="0"
+              width="100%"
+              style="background-color:#fff3ec; border-left:4px solid #F26A21; border-radius:8px; font-family:'Poppins','Segoe UI',Arial,sans-serif;"
+            >
+              <tr>
+                <td style="padding:14px 16px;">
+                  <div
+                    style="color:#F26A21; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:1px; padding-bottom:4px;"
+                  >
+                    Masterclass incluida
+                  </div>
+                  <div style="color:#101828; font-size:13px; line-height:1.55;">
+                    Confirmaste tu asistencia a la <strong>Masterclass</strong>. Te recomendamos
+                    llegar con 15 minutos de antelación para tomar tu asiento. El cupo es limitado.
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <? } ?>
+
+        <!-- ---------- ENTRADAS (un bloque por ticket) ---------- -->
+        <tr>
+          <td style="padding:24px 28px 4px 28px; font-family:'Poppins','Segoe UI',Arial,sans-serif;">
+            <div
+              style="color:#1B3B8B; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:2px;"
+            >
+              <?= tickets.length === 1 ? 'Tu entrada' : 'Tus entradas' ?>
+            </div>
+          </td>
+        </tr>
+
+        <? for (var i = 0; i < tickets.length; i++) { var t = tickets[i]; ?>
+        <tr>
+          <td style="padding:12px 28px 0 28px;">
+            <table
+              role="presentation"
+              cellpadding="0"
+              cellspacing="0"
+              border="0"
+              width="100%"
+              style="border:2px solid #1B3B8B; border-radius:14px; background-color:#ffffff; font-family:'Poppins','Segoe UI',Arial,sans-serif;"
+            >
+              <!-- Rótulo del talón -->
+              <tr>
+                <td
+                  align="center"
+                  style="background-color:#1B3B8B; padding:8px 12px; border-radius:10px 10px 0 0; color:#ffffff; font-size:12px; font-weight:800; text-transform:uppercase; letter-spacing:3px;"
+                >
+                  Entrada General
+                </td>
+              </tr>
+
+              <tr>
+                <td style="padding:18px 18px 8px 18px;">
+                  <table
+                    role="presentation"
+                    cellpadding="0"
+                    cellspacing="0"
+                    border="0"
+                    width="100%"
+                  >
+                    <tr>
+                      <!-- Datos de la entrada -->
+                      <td valign="top" style="padding-right:12px;">
+                        <div
+                          style="color:#5b6478; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1px;"
+                        >
+                          Cliente / Empresa
+                        </div>
+                        <div
+                          style="color:#101828; font-size:16px; font-weight:800; padding-top:3px; line-height:1.3;"
+                        >
+                          <?= t.holderName ?>
+                        </div>
+                        <div style="color:#1B3B8B; font-size:12px; font-weight:600; padding-top:2px;">
+                          <?= reservation.companyName ?>
+                        </div>
+                        <div
+                          style="display:inline-block; margin-top:8px; background-color:#F26A21; color:#ffffff; font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:1px; padding:3px 10px; border-radius:10px;"
+                        >
+                          <?= t.holderTypeLabel ?>
+                        </div>
+
+                        <!-- Serial bien visible -->
+                        <div style="padding-top:14px;">
+                          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td
+                                style="border:2px solid #1B3B8B; border-radius:20px; padding:7px 14px;"
+                              >
+                                <span
+                                  style="color:#5b6478; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px;"
+                                  >General Nº</span
+                                >
+                                <span style="color:#c9cfdd; padding:0 6px;">|</span>
+                                <span
+                                  style="color:#1B3B8B; font-size:16px; font-weight:800; letter-spacing:1px;"
+                                  ><?= t.serial ?></span
+                                >
+                              </td>
+                            </tr>
+                          </table>
+                        </div>
+
+                        <div
+                          style="color:#5b6478; font-size:11px; font-weight:600; padding-top:12px; line-height:1.5;"
+                        >
+                          <?= eventHours ?> &nbsp;·&nbsp; <?= reservation.dayLabel ?><br />
+                          Válido por 1 día único
+                        </div>
+                      </td>
+
+                      <!-- QR incrustado (cid) -->
+                      <td valign="top" width="170" align="center">
+                        <table
+                          role="presentation"
+                          cellpadding="0"
+                          cellspacing="0"
+                          border="0"
+                          width="170"
+                        >
+                          <tr>
+                            <td
+                              align="center"
+                              style="border:2px solid #1B3B8B; border-radius:12px; padding:8px; background-color:#ffffff;"
+                            >
+                              <img
+                                src="cid:<?= t.cid ?>"
+                                alt="Código QR de la entrada <?= t.serial ?>"
+                                width="150"
+                                height="150"
+                                style="display:block; width:150px; height:150px; border:0; outline:none; text-decoration:none;"
+                              />
+                            </td>
+                          </tr>
+                          <tr>
+                            <td
+                              align="center"
+                              style="padding-top:6px; color:#5b6478; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px;"
+                            >
+                              Presenta este QR
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <? } ?>
+
+        <!-- ---------- INSTRUCCIONES ---------- -->
+        <tr>
+          <td style="padding:22px 28px 0 28px; font-family:'Poppins','Segoe UI',Arial,sans-serif;">
+            <table
+              role="presentation"
+              cellpadding="0"
+              cellspacing="0"
+              border="0"
+              width="100%"
+              style="background-color:#FBF9F6; border-radius:12px;"
+            >
+              <tr>
+                <td style="padding:16px 18px; color:#101828; font-size:13px; line-height:1.65;">
+                  <strong style="color:#1B3B8B;">Cómo usar tu entrada</strong><br />
+                  Muestra el código QR en la puerta, impreso o desde la pantalla de tu teléfono.
+                  También lo adjuntamos como imagen PNG para que puedas guardarlo. Se escanea al
+                  entrar y al salir; cada entrada es personal y válida por
+                  <strong>1 día único</strong>.
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- ---------- PIE ---------- -->
+        <tr>
+          <td
+            align="center"
+            style="padding:26px 28px 28px 28px; font-family:'Poppins','Segoe UI',Arial,sans-serif;"
+          >
+            <div style="color:#1B3B8B; font-size:17px; font-weight:800; letter-spacing:1px;">
+              EMPAQUES <span style="font-weight:400;">belén</span>
+            </div>
+            <div style="color:#5b6478; font-size:12px; font-style:italic; padding-top:4px;">
+              <?= tagline ?>
+            </div>
+            <div style="color:#98a2b3; font-size:11px; padding-top:12px; line-height:1.5;">
+              Este correo se generó automáticamente por tu reserva del Día del Cliente 2026.<br />
+              Si no reconoces esta reserva, responde a este mensaje y lo revisamos.
+            </div>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>

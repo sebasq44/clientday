@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-belen-cream text-belen-ink font-sans;
+  }
+
+  /* Quita las flechas de los inputs numéricos */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+}
+
+@layer components {
+  /* Franja decorativa naranja con rombo central, como en la invitación oficial */
+  .belen-divider {
+    @apply relative flex items-center justify-center py-1;
+  }
+  .belen-divider::before,
+  .belen-divider::after {
+    content: '';
+    @apply h-[2px] flex-1 bg-belen-orange/60;
+  }
+  .belen-divider span {
+    @apply mx-2 h-2.5 w-2.5 rotate-45 bg-belen-orange;
+  }
+
+  /* Borde troquelado de la entrada */
+  .ticket-dashed {
+    background-image: linear-gradient(
+      to bottom,
+      #f26a21 0,
+      #f26a21 8px,
+      transparent 8px,
+      transparent 16px
+    );
+    background-size: 2px 16px;
+    background-repeat: repeat-y;
+  }
+}
+
+/* El lector de QR (html5-qrcode) inyecta su propio marcado: lo domamos aquí */
+#qr-reader {
+  @apply overflow-hidden rounded-2xl border-2 border-belen-blue/20;
+}
+#qr-reader video {
+  @apply w-full rounded-2xl object-cover;
+}
+#qr-reader img[alt='Info icon'] {
+  display: none;
+}
+#qr-reader__dashboard_section_csr button {
+  @apply rounded-lg bg-belen-blue px-4 py-2 text-sm font-semibold text-white;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}

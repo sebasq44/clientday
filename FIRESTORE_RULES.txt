@@ -1,0 +1,270 @@
+================================================================================
+ DÍA DEL CLIENTE 2026 — EMPAQUES BELÉN
+ Reglas de seguridad de Cloud Firestore (listas para pegar en la consola)
+================================================================================
+
+ CÓMO INSTALAR ESTAS REGLAS
+ --------------------------
+ 1. Abre https://console.firebase.google.com y entra al proyecto  client-day.
+ 2. Menú lateral: «Compilación» > «Firestore Database» > pestaña «Reglas».
+ 3. Borra todo lo que haya y pega TODO el bloque de abajo (desde
+    rules_version = '2';  hasta la última llave  }  ).
+ 4. Pulsa «Publicar». Los cambios entran en vigor en unos segundos.
+
+
+ CÓMO CREAR EL USUARIO ADMINISTRADOR (obligatorio: sin esto nadie entra al panel)
+ -------------------------------------------------------------------------------
+ PASO 1 — Habilitar el método de acceso:
+   Consola de Firebase > «Compilación» > «Authentication» > «Sign-in method»
+   > «Correo electrónico/contraseña» > actívalo > «Guardar».
+
+ PASO 2 — Crear la cuenta:
+   Pestaña «Users» (Usuarios) > «Add user» (Agregar usuario).
+   Escribe el correo (ej.  admin@empaquesbelen.com ) y una contraseña segura.
+   > «Add user».
+
+ PASO 3 — Copiar el UID:
+   En la lista de usuarios aparece una columna «User UID» con un texto tipo
+   xY7bQk3mSfW2pL9dR4tHnA1cVe83 . Cópialo con el botón de copiar. ESE es el uid.
+
+ PASO 4 — Crear el documento que lo convierte en administrador:
+   «Firestore Database» > pestaña «Datos» > «Iniciar colección» (o «+ Agregar
+   colección» si ya hay datos).
+     - ID de la colección:  admins        (exactamente así, en minúsculas)
+     - ID del documento:    PEGA AQUÍ EL UID DEL PASO 3   (¡no uses «ID automático»!)
+     - Campo 1:  email      (tipo string)     valor: el correo del administrador
+     - Campo 2:  createdAt  (tipo timestamp)  valor: la fecha/hora de hoy
+   > «Guardar».
+
+ LISTO. La sola EXISTENCIA de  admins/{uid}  es lo que da permisos: estas reglas y
+ el frontend (hooks/useAuth.jsx) comprueban ese documento. Para dar de alta a otro
+ administrador, repite los pasos 2-4 con su cuenta. Para revocarle el acceso, BORRA
+ su documento de  admins/  (aunque su usuario de Authentication siga existiendo, ya
+ no podrá leer ni escribir nada del panel).
+
+ Nadie puede escribir en la colección  admins  desde la app: se administra a mano
+ desde la consola, a propósito. Así, aunque alguien reventara el frontend, no puede
+ auto-concederse permisos.
+
+
+ QUÉ PROTEGEN ESTAS REGLAS
+ -------------------------
+ · Lo público es SOLO lo que el formulario necesita para funcionar: la configuración
+   del evento, los agentes, los slots ocupados (para no ofrecer horas ya tomadas) y
+   la CREACIÓN de una solicitud de reserva.
+ · Nadie que no sea administrador puede LEER las reservas (datos personales de los
+   clientes), ni las entradas, ni la bitácora de escaneos.
+ · Una reserva creada desde el formulario nace obligatoriamente como 'pending', sin
+   entradas y sin correo enviado: nadie puede auto-aprobarse una reserva ni inyectar
+   ticketIds. Solo un administrador puede cambiarle el estado.
+ · Los campos están limitados en tipo, cantidad y longitud, para evitar que alguien
+   use la colección como almacenamiento gratuito o meta cargas enormes.
+
+================================================================================
+ A PARTIR DE AQUÍ: COPIA Y PEGA EN LA CONSOLA
+================================================================================
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------
+    // AYUDANTES
+    // ------------------------------------------------------------------
+
+    // Es administrador si ha iniciado sesión Y existe su documento en admins/{uid}.
+    // exists() se evalúa en el servidor y NO depende de las reglas de lectura de
+    // la colección admins, así que funciona aunque admins sea ilegible.
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Cadena obligatoria: existe, no está vacía y no se pasa de largo.
+    function isFilledString(value, maxLength) {
+      return value is string && value.size() > 0 && value.size() <= maxLength;
+    }
+
+    // Cadena opcional: si viene, es texto y no se pasa de largo.
+    function isBoundedString(value, maxLength) {
+      return value is string && value.size() <= maxLength;
+    }
+
+    // ¿Trae la reserva esta clave opcional?
+    function has(data, key) {
+      return data.keys().hasAny([key]);
+    }
+
+    // ------------------------------------------------------------------
+    // config/general — parámetros del evento (días, horas, prefijo, flags)
+    // Lectura PÚBLICA: el formulario necesita saber los días/horas y si está abierto.
+    // Escritura solo administradores (pantalla /admin/settings).
+    // ------------------------------------------------------------------
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    // agents/{agentId} — agentes de venta
+    // Lectura PÚBLICA: el formulario muestra la lista de agentes con su foto.
+    // (Solo se publican nombre, correo corporativo y foto: nada sensible.)
+    // Escritura solo administradores (pantalla /admin/agents).
+    // ------------------------------------------------------------------
+    match /agents/{agentId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    // slots/{day}_{hour}_{agentId} — bloqueo de disponibilidad
+    // Lectura PÚBLICA: el formulario necesita saber qué combinaciones ya están
+    // ocupadas para deshabilitarlas. El documento no contiene datos personales.
+    // Escritura solo administradores: el slot se crea DENTRO de la transacción de
+    // aprobación y se borra al cancelar/rechazar. Nadie más puede tocarlo.
+    // ------------------------------------------------------------------
+    match /slots/{slotId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    // reservations/{id} — solicitudes del formulario público
+    //
+    // CREATE: público, pero con validación ESTRICTA (ver isValidNewReservation).
+    // READ / UPDATE / DELETE: solo administradores. Un cliente NO puede leer las
+    // reservas de otros (llevan nombre, correo y teléfono), ni modificar la suya.
+    // ------------------------------------------------------------------
+    match /reservations/{reservationId} {
+
+      function isValidNewReservation() {
+        let data = request.resource.data;
+
+        return
+          // 1) El documento solo puede tener EXACTAMENTE estos campos (§4 del contrato).
+          //    Cualquier campo extra hace fallar la creación: nada de basura.
+          data.keys().hasOnly([
+            'clientCode', 'fullName', 'companyName', 'email', 'phone',
+            'hasCompanion', 'companionName', 'agentId', 'agentName',
+            'day', 'hour', 'masterclass', 'status', 'rejectionReason',
+            'emailStatus', 'emailError', 'emailSentAt', 'ticketIds',
+            'createdAt', 'approvedAt', 'reviewedBy'
+          ])
+
+          // 2) Y estos son obligatorios.
+          && data.keys().hasAll([
+            'clientCode', 'fullName', 'companyName', 'email', 'hasCompanion',
+            'agentId', 'agentName', 'day', 'hour', 'masterclass',
+            'status', 'emailStatus', 'ticketIds', 'createdAt'
+          ])
+
+          // 3) Tipos y longitudes máximas razonables (evitan abuso y cargas enormes).
+          && isFilledString(data.clientCode, 40)
+          && isFilledString(data.fullName, 120)
+          && isFilledString(data.companyName, 140)
+          && isFilledString(data.email, 160)
+          && data.email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]{2,}$')
+          && isFilledString(data.agentName, 120)
+          && isFilledString(data.agentId, 64)
+
+          // 4) Día con formato AAAA-MM-DD y hora HH:mm (los valida además el cliente
+          //    contra config.days / config.hours). El rango del mes (01-12), del día (01-31) y
+          //    de la hora (00-23:00-59) va en la propia regex para rechazar fechas/horas
+          //    imposibles como 0000-00-00 o 99:99, que un formato laxo dejaría pasar.
+          && isFilledString(data.day, 10)
+          && data.day.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$')
+          && isFilledString(data.hour, 5)
+          && data.hour.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+
+          // 5) Booleanos de verdad, no cadenas.
+          && data.hasCompanion is bool
+          && data.masterclass is bool
+
+          // 6) El acompañante: si lo hay, tiene que venir con nombre; si no, vacío.
+          && (
+            data.hasCompanion
+              ? isFilledString(data.companionName, 120)
+              : (!has(data, 'companionName') || data.companionName == '')
+          )
+
+          // 7) LA PARTE CRÍTICA: la reserva nace pendiente, sin entradas y sin correo.
+          //    Nadie puede auto-aprobarse una cita ni inyectar entradas desde fuera.
+          && data.status == 'pending'
+          && data.emailStatus == 'not_sent'
+          && data.ticketIds is list
+          && data.ticketIds.size() == 0
+
+          // 8) La fecha la pone el servidor (serverTimestamp), no el cliente.
+          && data.createdAt == request.time
+
+          // 9) Campos opcionales: si vienen, tienen que venir limpios.
+          && (!has(data, 'phone') || isBoundedString(data.phone, 30))
+          && (!has(data, 'rejectionReason') || data.rejectionReason == '')
+          && (!has(data, 'emailError') || data.emailError == '')
+          && (!has(data, 'emailSentAt') || data.emailSentAt == null)
+          && (!has(data, 'approvedAt') || data.approvedAt == null)
+          && (!has(data, 'reviewedBy') || data.reviewedBy == null)
+
+          // 10) El agente elegido tiene que existir de verdad.
+          //     (Si algún día molesta —por ejemplo, al importar datos a mano—,
+          //      basta con borrar esta línea: el resto sigue protegiendo igual.)
+          && exists(/databases/$(database)/documents/agents/$(data.agentId));
+      }
+
+      allow create: if isValidNewReservation();
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    // tickets/{id} — entradas emitidas (serial + qrToken)
+    // SOLO administradores. El qrToken es la llave de entrada al evento: si fuera
+    // legible en público, cualquiera podría fabricarse un QR válido.
+    // Se crean dentro de la transacción de aprobación y se borran si se cancela.
+    // ------------------------------------------------------------------
+    match /tickets/{ticketId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    // scans/{id} — bitácora de escaneos (auditoría de la puerta)
+    // SOLO administradores. Se escribe desde el escáner en cada intento.
+    // ------------------------------------------------------------------
+    match /scans/{scanId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    // counters/tickets — correlativo del serial de las entradas
+    // SOLO administradores. Se lee y se incrementa dentro de la transacción de
+    // aprobación. Nadie de fuera debe poder resetearlo (rompería los seriales).
+    // ------------------------------------------------------------------
+    match /counters/{counterId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ------------------------------------------------------------------
+    // admins/{uid} — quién puede entrar al panel
+    // ESCRITURA PROHIBIDA A TODOS, incluidos los administradores: estos documentos
+    // se crean a mano desde la consola de Firebase (ver los pasos de arriba). Así
+    // nadie puede concederse permisos a sí mismo aunque manipule el frontend.
+    //
+    // LECTURA: cada usuario autenticado puede leer ÚNICAMENTE su propio documento
+    // (es lo que hace useAuth.jsx tras el login para saber si es admin; si no existe,
+    // simplemente le devuelve «no existe» en vez de un error de permisos). Un
+    // administrador puede además leer la lista completa.
+    // ------------------------------------------------------------------
+    match /admins/{uid} {
+      allow read: if isAdmin() || (request.auth != null && request.auth.uid == uid);
+      allow write: if false;
+    }
+
+    // ------------------------------------------------------------------
+    // Todo lo demás queda denegado. Firestore ya deniega por defecto lo que no
+    // tiene una regla que lo permita; esto solo lo deja por escrito.
+    // ------------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
