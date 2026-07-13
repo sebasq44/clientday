@@ -444,7 +444,7 @@ function TicketCard({ ticket, config }) {
           <p className="truncate font-semibold text-belen-ink">{ticket.holderName}</p>
           <p className="truncate text-sm text-slate-500">{ticket.companyName}</p>
         </div>
-        <Badge status={ticket.status} />
+        <Badge status={ticket.status} className="shrink-0" />
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">

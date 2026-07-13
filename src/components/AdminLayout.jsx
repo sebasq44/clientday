@@ -105,7 +105,7 @@ export default function AdminLayout() {
           <button
             type="button"
             onClick={() => setMenuOpen(false)}
-            className="rounded-lg p-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white md:hidden"
+            className="rounded-lg p-2 text-white/80 transition-colors hover:bg-white/10 hover:text-white lg:hidden"
             aria-label="Cerrar menú"
           >
             <X className="h-5 w-5" aria-hidden="true" />
@@ -143,27 +143,27 @@ export default function AdminLayout() {
       </aside>
 
       {/* Columna de contenido */}
-      <div className="md:pl-64">
+      <div className="lg:pl-64">
         <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-belen-blue/10 bg-white/95 px-4 py-3 backdrop-blur md:px-8">
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
-            className="rounded-lg p-2 text-belen-blue transition-colors hover:bg-belen-blue/5 md:hidden"
+            className="shrink-0 rounded-lg p-2 text-belen-blue transition-colors hover:bg-belen-blue/5 lg:hidden"
             aria-label="Abrir menú"
           >
             <Menu className="h-6 w-6" aria-hidden="true" />
           </button>
 
-          <h1 className="font-display text-lg font-extrabold uppercase tracking-tight text-belen-blue md:text-xl">
+          <h1 className="min-w-0 flex-1 truncate font-display text-base font-extrabold uppercase tracking-tight text-belen-blue sm:text-lg md:text-xl">
             {sectionTitle(location.pathname)}
           </h1>
 
-          <span className="ml-auto hidden text-xs font-semibold uppercase tracking-[0.18em] text-belen-orange sm:block">
+          <span className="hidden shrink-0 text-xs font-semibold uppercase tracking-[0.18em] text-belen-orange sm:block">
             Conexiones que impulsan
           </span>
         </header>
 
-        <main className="p-4 md:p-8 max-w-7xl mx-auto">
+        <main className="mx-auto max-w-7xl p-4 md:p-8">
           <Outlet />
         </main>
       </div>

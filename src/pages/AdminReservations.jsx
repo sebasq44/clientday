@@ -917,18 +917,18 @@ export default function AdminReservations() {
                     </div>
 
                     <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                      <div>
+                      <div className="min-w-0">
                         <dt className="text-[11px] uppercase tracking-wide text-belen-blue/50">
                           Día y hora
                         </dt>
-                        <dd className="font-semibold text-belen-ink">
+                        <dd className="truncate font-semibold text-belen-ink">
                           {dayLabel(config, reservation.day)}
                         </dd>
                         <dd className="text-xs text-slate-500">
                           {formatHourRange(reservation.hour)}
                         </dd>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <dt className="text-[11px] uppercase tracking-wide text-belen-blue/50">
                           Correo
                         </dt>
@@ -936,20 +936,20 @@ export default function AdminReservations() {
                           <Badge status={emailStatus}>{EMAIL_STATUS_LABEL[emailStatus]}</Badge>
                         </dd>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <dt className="text-[11px] uppercase tracking-wide text-belen-blue/50">
                           Acompañante
                         </dt>
-                        <dd className="mt-0.5 flex items-center gap-2">
+                        <dd className="mt-0.5 flex min-w-0 items-center gap-2">
                           <CompanionCell reservation={reservation} />
                           {reservation.hasCompanion && (
-                            <span className="truncate text-xs text-slate-500">
+                            <span className="min-w-0 truncate text-xs text-slate-500">
                               {reservation.companionName}
                             </span>
                           )}
                         </dd>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <dt className="text-[11px] uppercase tracking-wide text-belen-blue/50">
                           Masterclass
                         </dt>

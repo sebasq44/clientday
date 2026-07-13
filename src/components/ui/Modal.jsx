@@ -100,7 +100,7 @@ export default function Modal({ open, onClose, title, size = 'md', children, foo
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-belen-ink/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-belen-ink/50 p-3 backdrop-blur-sm sm:p-4"
       onMouseDown={handleBackdropMouseDown}
     >
       <style>{`
@@ -119,12 +119,12 @@ export default function Modal({ open, onClose, title, size = 'md', children, foo
         style={{ animation: 'belen-modal-in 180ms ease-out' }}
         className={[
           'relative flex max-h-[92vh] w-full flex-col overflow-hidden bg-white shadow-card-hover',
-          'rounded-t-2xl sm:rounded-2xl',
+          'rounded-2xl',
           'focus:outline-none',
           SIZES[size] || SIZES.md,
         ].join(' ')}
       >
-        <header className="flex items-start justify-between gap-4 border-b border-belen-blue/10 px-5 py-4">
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-belen-blue/10 px-4 py-4 sm:px-5">
           <h2
             id={titleId}
             className="font-display text-base font-extrabold uppercase tracking-wide text-belen-blue"
@@ -142,10 +142,10 @@ export default function Modal({ open, onClose, title, size = 'md', children, foo
           </button>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-5">{children}</div>
 
         {footer && (
-          <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-belen-blue/10 bg-belen-cream/60 px-5 py-4">
+          <footer className="flex shrink-0 flex-col-reverse gap-2 border-t border-belen-blue/10 bg-belen-cream/60 px-4 py-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:px-5 [&>*]:w-full sm:[&>*]:w-auto">
             {footer}
           </footer>
         )}
