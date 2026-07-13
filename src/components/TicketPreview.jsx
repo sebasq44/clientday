@@ -140,8 +140,9 @@ export default function TicketPreview({ ticket, config }) {
   )
 
   return (
-    <article className="mx-auto w-full max-w-[900px] overflow-hidden rounded-2xl border-2 border-belen-blue bg-white shadow-card print:shadow-none">
-      <div className="flex flex-col print:flex-row md:flex-row">
+    <div className="w-full overflow-x-auto print:overflow-x-visible">
+      <article className="mx-auto w-full min-w-[300px] max-w-[900px] overflow-hidden rounded-2xl border-2 border-belen-blue bg-white shadow-card print:shadow-none">
+        <div className="flex flex-col print:flex-row md:flex-row">
         {/* ---------------- CUERPO ---------------- */}
         <div className="flex-1 p-5 sm:p-6">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-6">
@@ -272,7 +273,8 @@ export default function TicketPreview({ ticket, config }) {
             <Logo variant="compact" className="h-6 w-auto" />
           </div>
         </aside>
-      </div>
-    </article>
+        </div>
+      </article>
+    </div>
   )
 }
