@@ -84,16 +84,16 @@ export default function AdminLayout() {
       {/* Fondo oscuro del cajón (solo móvil) */}
       {menuOpen && (
         <div
-          className="fixed inset-0 z-40 bg-belen-ink/50 md:hidden"
+          className="fixed inset-0 z-40 bg-belen-ink/50 lg:hidden"
           onClick={() => setMenuOpen(false)}
           aria-hidden="true"
         />
       )}
 
-      {/* Barra lateral: fija en escritorio, cajón deslizante en móvil */}
+      {/* Barra lateral: fija en escritorio, cajón deslizante en móvil/tablet */}
       <aside
         className={[
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-belen-blue transition-transform duration-200 ease-out md:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex w-64 max-w-[85vw] flex-col bg-belen-blue transition-transform duration-200 ease-out lg:translate-x-0',
           menuOpen ? 'translate-x-0' : '-translate-x-full',
         ].join(' ')}
         aria-label="Navegación del panel"

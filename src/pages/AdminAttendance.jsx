@@ -355,15 +355,15 @@ export default function AdminAttendance() {
             />
           ) : (
             <>
-              {/* Móvil: tarjetas */}
-              <ul className="space-y-3 md:hidden">
+              {/* Móvil / tablet: tarjetas (hasta <1024px) */}
+              <ul className="space-y-3 lg:hidden">
                 {visible.map((ticket) => (
                   <TicketCard key={ticket.id} ticket={ticket} config={config} />
                 ))}
               </ul>
 
-              {/* Escritorio: tabla */}
-              <div className="-mx-4 hidden overflow-x-auto px-4 sm:-mx-6 sm:px-6 md:block">
+              {/* Escritorio: tabla (≥1024px, con scroll horizontal propio) */}
+              <div className="-mx-4 hidden overflow-x-auto px-4 sm:-mx-6 sm:px-6 lg:block">
                 <table className="min-w-full border-separate border-spacing-0 text-left text-sm">
                   <thead>
                     <tr className="text-[11px] uppercase tracking-wider text-slate-500">
