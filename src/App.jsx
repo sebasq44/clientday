@@ -15,10 +15,13 @@ import AdminScanner from './pages/AdminScanner'
 import AdminAttendance from './pages/AdminAttendance'
 import AdminUsers from './pages/AdminUsers'
 
-// Rutas donde entran los tres roles (control de acceso el día del evento).
+// Rutas donde entran los tres roles.
 const ALL_ROLES = [ROLE.SUPERADMIN, ROLE.AGENTE, ROLE.SEGURIDAD]
 // Rutas exclusivas del administrador general.
 const SUPER_ONLY = [ROLE.SUPERADMIN]
+// El escáner de la puerta es SOLO para seguridad (y el administrador). Los agentes de ventas
+// no escanean entradas.
+const SCANNER_ROLES = [ROLE.SUPERADMIN, ROLE.SEGURIDAD]
 
 export default function App() {
   return (
@@ -84,7 +87,7 @@ export default function App() {
             <Route
               path="scanner"
               element={
-                <ProtectedRoute roles={ALL_ROLES}>
+                <ProtectedRoute roles={SCANNER_ROLES}>
                   <AdminScanner />
                 </ProtectedRoute>
               }

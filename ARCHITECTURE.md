@@ -172,18 +172,24 @@ La existencia de `admins/{uid}` = puede entrar al panel; el campo `role` decide 
 - **superadmin**: acceso total. Crea a los demás usuarios (Seguridad desde /admin/users; Agentes con
   acceso desde /admin/agents). El superadmin **original** se crea a mano en la consola (su doc puede
   no tener `role`; se trata como superadmin).
-- **agente**: ve y gestiona **solo sus** reservas (donde `reservation.agentId === su agentId`) +
-  escáner + asistencia. No edita config, agentes ni usuarios.
+- **agente**: ve y gestiona **solo sus** reservas (donde `reservation.agentId === su agentId`) y ve
+  la asistencia. **NO escanea entradas** (el escáner es exclusivo de seguridad). No edita config,
+  agentes ni usuarios.
 - **seguridad**: solo escáner + ver invitaciones/asistencia (lectura). No aprueba ni edita nada.
 
 Las cuentas de Firebase Auth de agente/seguridad se crean desde el cliente con una **app secundaria
 de Firebase** (`lib/firebaseSecondary.js`) para no cerrar la sesión del superadmin. El doc
 `admins/{uid}` lo escribe la sesión del superadmin (las reglas solo se lo permiten a él).
 
-### `agents/{agentId}` — campos de acceso (añadidos)
+### `agents/{agentId}` — campos añadidos
 
-Además de los campos de §4, un agente con cuenta de acceso lleva: `uid` (su usuario del panel),
-`hasAccess: true` y `accessEmail` (el correo con el que entra).
+Además de los campos de §4:
+
+- `whatsapp`: **8 dígitos** de Costa Rica, sin espacios, guiones ni prefijo (el `+506` es fijo).
+  Al registrar la ENTRADA de un cliente, el escáner ofrece un botón «Notificar por WhatsApp» que
+  abre el chat del agente con un mensaje ya escrito (código y nombre del cliente). Se abre en una
+  pestaña nueva para que el guarda vuelva al escáner tal como lo dejó.
+- Cuenta de acceso (si la tiene): `uid` (su usuario del panel), `hasAccess: true` y `accessEmail`.
 
 ## 5. Máquina de estados
 

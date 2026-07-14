@@ -18,6 +18,8 @@ import Logo from './Logo'
 
 const ALL = [ROLE.SUPERADMIN, ROLE.AGENTE, ROLE.SEGURIDAD]
 const SUPER = [ROLE.SUPERADMIN]
+// El escáner de la puerta es exclusivo de seguridad (y del administrador).
+const SCANNER = [ROLE.SUPERADMIN, ROLE.SEGURIDAD]
 
 /**
  * Navegación del panel. Cada ítem declara qué roles lo ven. `end` limita la coincidencia exacta
@@ -26,7 +28,7 @@ const SUPER = [ROLE.SUPERADMIN]
 const NAV_ITEMS = [
   { to: '/admin', label: 'Resumen', icon: LayoutDashboard, end: true, roles: SUPER },
   { to: '/admin/reservations', label: 'Reservas', icon: CalendarCheck, roles: ALL },
-  { to: '/admin/scanner', label: 'Escáner', icon: ScanLine, roles: ALL },
+  { to: '/admin/scanner', label: 'Escáner', icon: ScanLine, roles: SCANNER },
   { to: '/admin/attendance', label: 'Asistencia', icon: UserCheck, roles: ALL },
   { to: '/admin/agents', label: 'Agentes', icon: Users, roles: SUPER },
   { to: '/admin/users', label: 'Usuarios', icon: UserCog, roles: SUPER },

@@ -45,8 +45,14 @@ function mapAgent(snap) {
     id: snap.id,
     name: clean(data.name),
     email: clean(data.email),
+    // WhatsApp en 8 dígitos (Costa Rica, +506). Lo usa el escáner para avisar al agente.
+    whatsapp: clean(data.whatsapp),
     photoBase64: data.photoBase64 || null,
     active: data.active !== false,
+    // Cuenta de acceso al panel (la crea el superadmin desde /admin/agents).
+    uid: data.uid ?? null,
+    hasAccess: data.hasAccess === true,
+    accessEmail: clean(data.accessEmail),
     createdAt: data.createdAt ?? null,
   }
 }
@@ -97,8 +103,27 @@ export async function listActiveAgents() {
   }
 }
 
+/**
+ * Normaliza el WhatsApp del agente. Todos los números son de Costa Rica (+506), así que se guardan
+ * como 8 dígitos, SIN espacios, guiones ni prefijo. Se acepta que lo peguen con el 506 delante o
+ * con separadores: aquí se limpia. Devuelve '' si no hay número.
+ * @throws {Error} si el número no tiene 8 dígitos.
+ */
+export function normalizeWhatsapp(value) {
+  const digits = String(value ?? '').replace(/\D/g, '')
+  if (!digits) return ''
+
+  // Si lo pegaron con el prefijo del país, se lo quitamos.
+  const local = digits.startsWith('506') && digits.length > 8 ? digits.slice(3) : digits
+
+  if (local.length !== 8) {
+    throw new Error('El WhatsApp debe tener 8 dígitos (formato de Costa Rica, sin espacios ni guiones).')
+  }
+  return local
+}
+
 /** Crea un agente y devuelve su id. */
-export async function createAgent({ name, email, photoBase64, active } = {}) {
+export async function createAgent({ name, email, whatsapp, photoBase64, active } = {}) {
   const cleanName = clean(name)
   if (!cleanName) throw new Error('El nombre del agente es obligatorio.')
 
@@ -107,12 +132,14 @@ export async function createAgent({ name, email, photoBase64, active } = {}) {
     throw new Error('El correo del agente no es válido.')
   }
 
+  const cleanWhatsapp = normalizeWhatsapp(whatsapp)
   const photo = sanitizePhoto(photoBase64)
 
   try {
     const ref = await addDoc(agentsCol(), {
       name: cleanName,
       email: cleanEmail,
+      whatsapp: cleanWhatsapp,
       photoBase64: photo,
       active: active !== false,
       createdAt: serverTimestamp(),
@@ -148,6 +175,7 @@ export async function updateAgent(id, patch) {
     payload.email = cleanEmail
   }
 
+  if ('whatsapp' in patch) payload.whatsapp = normalizeWhatsapp(patch.whatsapp)
   if ('photoBase64' in patch) payload.photoBase64 = sanitizePhoto(patch.photoBase64)
   if ('active' in patch) payload.active = Boolean(patch.active)
 

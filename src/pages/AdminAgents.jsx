@@ -28,7 +28,10 @@ import { createAgentAccess, revokeAgentAccess } from '../services/usersService'
 import { RESERVATION_STATUS } from '../lib/constants'
 import { clean, isValidEmail } from '../lib/format'
 
-const EMPTY_FORM = { name: '', email: '', photoBase64: null, active: true }
+const EMPTY_FORM = { name: '', email: '', whatsapp: '', photoBase64: null, active: true }
+
+/** Solo dígitos: el WhatsApp se guarda sin espacios, guiones ni prefijo (+506 es fijo). */
+const onlyDigits = (value) => String(value ?? '').replace(/\D/g, '').slice(0, 8)
 
 /** Peso aproximado en KB del contenido de un dataURL base64. */
 function dataUrlKb(dataUrl) {
@@ -175,6 +178,7 @@ export default function AdminAgents() {
     setForm({
       name: agent.name || '',
       email: agent.email || '',
+      whatsapp: agent.whatsapp || '',
       photoBase64: agent.photoBase64 || null,
       active: agent.active !== false,
     })
@@ -249,6 +253,11 @@ export default function AdminAgents() {
     if (clean(form.email) && !isValidEmail(form.email)) {
       next.email = 'Escribe un correo válido, por ejemplo agente@empaquesbelen.com.'
     }
+    // El WhatsApp es opcional, pero si lo escriben tiene que ser un número tico completo.
+    const wa = onlyDigits(form.whatsapp)
+    if (wa && wa.length !== 8) {
+      next.whatsapp = 'El WhatsApp debe tener 8 dígitos (sin espacios ni guiones).'
+    }
     setErrors(next)
     return Object.keys(next).length === 0
   }
@@ -266,6 +275,7 @@ export default function AdminAgents() {
       const payload = {
         name: clean(form.name),
         email: clean(form.email),
+        whatsapp: onlyDigits(form.whatsapp),
         photoBase64: form.photoBase64 || null,
         active: Boolean(form.active),
       }
@@ -510,6 +520,16 @@ export default function AdminAgents() {
                       <p className="mt-0.5 truncate text-xs text-slate-500">
                         {agent.email || 'Sin correo registrado'}
                       </p>
+                      <p
+                        className={[
+                          'mt-0.5 truncate text-xs font-medium',
+                          agent.whatsapp ? 'text-emerald-600' : 'text-slate-400',
+                        ].join(' ')}
+                      >
+                        {agent.whatsapp
+                          ? `WhatsApp +506 ${agent.whatsapp}`
+                          : 'Sin WhatsApp registrado'}
+                      </p>
                       <div className="mt-2">
                         <Badge status={agent.active ? 'approved' : 'cancelled'}>
                           {agent.active ? 'Activo' : 'Inactivo'}
@@ -655,6 +675,50 @@ export default function AdminAgents() {
             placeholder="agente@empaquesbelen.com"
             autoComplete="off"
           />
+
+          {/* WhatsApp: el prefijo +506 es fijo (todos los agentes son de Costa Rica), así que
+              solo se escriben los 8 dígitos. Con esto, seguridad puede avisarle al agente desde
+              el escáner en cuanto su cliente entra al evento. */}
+          <div>
+            <label
+              htmlFor="agent-whatsapp"
+              className="mb-1.5 block text-sm font-semibold text-belen-ink"
+            >
+              WhatsApp
+            </label>
+            <div className="flex items-stretch">
+              <span className="flex select-none items-center rounded-l-xl border border-r-0 border-belen-blue/20 bg-belen-blue/5 px-3 text-sm font-bold text-belen-blue">
+                +506
+              </span>
+              <input
+                id="agent-whatsapp"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="off"
+                value={form.whatsapp}
+                onChange={(event) =>
+                  setForm({ ...form, whatsapp: onlyDigits(event.target.value) })
+                }
+                placeholder="88887777"
+                aria-invalid={Boolean(errors.whatsapp)}
+                className={[
+                  'w-full rounded-r-xl border px-3 py-2.5 text-sm font-medium tracking-wide outline-none transition-colors',
+                  'focus:ring-2 focus:ring-belen-orange',
+                  errors.whatsapp
+                    ? 'border-red-300 bg-red-50 text-red-700'
+                    : 'border-belen-blue/20 bg-white text-belen-ink',
+                ].join(' ')}
+              />
+            </div>
+            {errors.whatsapp ? (
+              <p className="mt-1.5 text-xs font-medium text-red-600">{errors.whatsapp}</p>
+            ) : (
+              <p className="mt-1.5 text-xs text-slate-500">
+                Opcional. 8 dígitos, sin espacios ni guiones. Seguridad podrá avisarle por WhatsApp
+                cuando su cliente entre al evento.
+              </p>
+            )}
+          </div>
 
           <div>
             <span className="mb-1.5 block text-sm font-semibold text-belen-ink">Foto</span>

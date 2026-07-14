@@ -9,12 +9,14 @@ import {
   Keyboard,
   LogIn,
   LogOut,
+  MessageCircle,
   RotateCcw,
   ScanLine,
   XCircle,
 } from 'lucide-react'
 
 import { useAuth } from '../hooks/useAuth'
+import { useAgents } from '../hooks/useAgents'
 import { useConfig } from '../hooks/useConfig'
 import { processScan, subscribeScans } from '../services/scanService'
 import { subscribeTickets } from '../services/ticketsService'
@@ -135,6 +137,38 @@ function vibrate(success) {
   }
 }
 
+/** Prefijo internacional de Costa Rica: todos los agentes tienen número +506. */
+const CR_DIAL_CODE = '506'
+
+/**
+ * Arma el enlace de WhatsApp con el mensaje ya escrito para avisarle al agente que su cliente
+ * acaba de entrar. Devuelve null si el agente no tiene número registrado.
+ *
+ * El enlace se abre en una pestaña NUEVA: así, cuando el guarda vuelve al navegador después de
+ * pulsar «Enviar» en WhatsApp, se encuentra el escáner exactamente como lo dejó.
+ */
+function buildWhatsappNoticeUrl({ agent, ticket, config }) {
+  const digits = String(agent?.whatsapp || '').replace(/\D/g, '')
+  if (!digits) return null
+
+  // Si el número ya trae el 506, no lo duplicamos.
+  const phone = digits.startsWith(CR_DIAL_CODE) ? digits : `${CR_DIAL_CODE}${digits}`
+
+  const eventName = [config?.eventName, config?.eventYear].filter(Boolean).join(' ') || 'el evento'
+  const company = ticket.companyName ? ` de ${ticket.companyName}` : ''
+  const code = ticket.clientCode ? ` (código ${ticket.clientCode})` : ''
+  const kind = HOLDER_TYPE_LABEL[ticket.holderType] || ''
+
+  const message = [
+    `Hola ${agent?.name || ''}`.trim() + ',',
+    '',
+    `Tu cliente ${ticket.holderName}${company}${code} acaba de ingresar a ${eventName}.`,
+    `Entrada: ${ticket.serial}${kind ? ` · ${kind}` : ''}`,
+  ].join('\n')
+
+  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+}
+
 /** Recuadro de puntería proporcional al ancho del visor (móvil en vertical incluido). */
 function qrboxFromViewfinder(viewfinderWidth, viewfinderHeight) {
   const smallestSide = Math.min(viewfinderWidth || 0, viewfinderHeight || 0)
@@ -149,6 +183,7 @@ function qrboxFromViewfinder(viewfinderWidth, viewfinderHeight) {
 export default function AdminScanner() {
   const { user } = useAuth()
   const { config } = useConfig()
+  const { agents } = useAgents()
   const toast = useToast()
 
   const [cameraActive, setCameraActive] = useState(false)
@@ -204,6 +239,13 @@ export default function AdminScanner() {
       unsubscribeScans()
     }
   }, [])
+
+  /* --- Agente del ticket recién escaneado (para avisarle por WhatsApp) --- */
+  const resultAgent = useMemo(() => {
+    const agentId = result?.ticket?.agentId
+    if (!agentId) return null
+    return agents.find((a) => a.id === agentId) || null
+  }, [agents, result])
 
   /* --- Contadores en vivo --- */
   const counts = useMemo(() => {
@@ -398,7 +440,13 @@ export default function AdminScanner() {
   return (
     <div className="space-y-5">
       {result && (
-        <ScanResultScreen result={result} config={config} onNext={scanNext} onClose={stopCamera} />
+        <ScanResultScreen
+          result={result}
+          config={config}
+          agent={resultAgent}
+          onNext={scanNext}
+          onClose={stopCamera}
+        />
       )}
 
       {/* Contadores en vivo */}
@@ -613,11 +661,15 @@ function CounterTile({ label, value, loading, className }) {
  * Pantalla de resultado a página completa. Se lee de un vistazo desde lejos y en la calle:
  * verde = pasa, azul = salió, rojo = no pasa.
  */
-function ScanResultScreen({ result, config, onNext, onClose }) {
+function ScanResultScreen({ result, config, agent, onNext, onClose }) {
   const { action, ticket, message, ok } = result
 
   const isCheckIn = action === SCAN_ACTION.CHECK_IN
   const isCheckOut = action === SCAN_ACTION.CHECK_OUT
+
+  // Solo al registrar la ENTRADA se le avisa al agente que su cliente ya llegó.
+  const whatsappUrl =
+    isCheckIn && ticket ? buildWhatsappNoticeUrl({ agent, ticket, config }) : null
 
   const theme = isCheckIn
     ? { bg: 'bg-emerald-600', Icon: CheckCircle2, title: 'ENTRADA' }
@@ -675,8 +727,14 @@ function ScanResultScreen({ result, config, onNext, onClose }) {
                   : null
               }
             />
-            {!ok && <ResultRow label="Entró" value={formatTime(ticket.checkInAt)} />}
-            {!ok && <ResultRow label="Salió" value={formatTime(ticket.checkOutAt)} />}
+            {/* Horas: en ENTRADA basta la de ingreso; en SALIDA se muestran ambas para que el
+                guarda vea de un vistazo cuánto estuvo dentro. En un rechazo, también ambas. */}
+            {(isCheckIn || isCheckOut || !ok) && (
+              <ResultRow label="Hora de ingreso" value={formatTime(ticket.checkInAt)} />
+            )}
+            {(isCheckOut || !ok) && (
+              <ResultRow label="Hora de salida" value={formatTime(ticket.checkOutAt)} />
+            )}
           </dl>
         ) : (
           <p className="mt-5 text-center text-base font-medium text-white/80">
@@ -703,6 +761,28 @@ function ScanResultScreen({ result, config, onNext, onClose }) {
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
             Cerrar y apagar la cámara
           </button>
+
+          {/* Aviso al agente por WhatsApp (solo en ENTRADA). Se abre en una pestaña nueva:
+              el guarda pulsa «Enviar» en WhatsApp y al volver al navegador encuentra el
+              escáner tal como lo dejó. */}
+          {isCheckIn && whatsappUrl && (
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[#25D366] text-base font-extrabold uppercase tracking-wide text-white shadow-card transition-transform active:scale-[0.98]"
+            >
+              <MessageCircle className="h-5 w-5" aria-hidden="true" />
+              Notificar por WhatsApp
+            </a>
+          )}
+
+          {isCheckIn && !whatsappUrl && ticket && (
+            <p className="text-center text-xs font-medium text-white/70">
+              {agent?.name || 'El agente'} no tiene un WhatsApp registrado. Agrégalo en
+              «Agentes» para poder avisarle.
+            </p>
+          )}
         </div>
       </div>
     </div>

@@ -243,9 +243,13 @@ es solo que se le oculten botones, es que el servidor le niega la operación.
 | | Administrador | Agente | Seguridad |
 |---|:---:|:---:|:---:|
 | Resumen, Ajustes, Agentes, Usuarios | ✅ | ❌ | ❌ |
-| Escáner de QR y Asistencia | ✅ | ✅ | ✅ |
+| **Escáner de QR** | ✅ | ❌ | ✅ |
+| Asistencia | ✅ | ✅ | ✅ |
 | Ver invitaciones | Todas | **Solo las suyas** | Todas (solo lectura) |
 | Aprobar / rechazar reservas | Todas | **Solo las suyas** | ❌ |
+
+> El **escáner de la puerta es exclusivo de Seguridad** (y del administrador). Los agentes de ventas
+> no escanean entradas: las reglas de Firestore se lo impiden aunque manipulen el navegador.
 
 - **Administrador (superadmin).** El que creaste a mano en la consola. Acceso total y es quien crea a
   los demás. *(Si su documento no tiene el campo `role`, el sistema lo trata como administrador, así

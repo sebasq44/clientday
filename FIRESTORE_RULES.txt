@@ -21,7 +21,8 @@
    · 'superadmin' → el administrador general. Acceso total. Crea a los demás usuarios.
                     (El admin que creaste a mano puede NO tener el campo role: en ese
                      caso se le trata como superadmin, así no tienes que editarlo.)
-   · 'agente'     → gestiona SOLO sus propias solicitudes + escáner + asistencia.
+   · 'agente'     → gestiona SOLO sus propias solicitudes + ve la asistencia.
+                    NO escanea entradas (el escáner es exclusivo de seguridad).
                     Lleva además un campo  agentId  que lo enlaza con su agente.
    · 'seguridad'  → solo escáner + ver invitaciones/asistencia. No aprueba ni edita nada.
 
@@ -236,26 +237,29 @@ service cloud.firestore {
 
     // ================================================================
     // tickets/{id} — entradas emitidas (serial + qrToken)
-    // READ:   cualquier usuario del panel (escáner y asistencia lo necesitan).
+    // READ:   cualquier usuario del panel (la pantalla de Asistencia lo necesita).
     // CREATE: superadmin, o un agente para entradas de SU agentId (al aprobar).
-    // UPDATE: cualquier usuario del panel (marcar entrada/salida en la puerta).
+    // UPDATE: SOLO superadmin y seguridad → marcar entrada/salida en la puerta.
+    //         Los AGENTES de ventas NO escanean, así que no pueden alterar estados.
     // DELETE: superadmin, o un agente para entradas de SU agentId (al cancelar).
     // El qrToken NUNCA es legible en público: fabricar un QR válido exige leer aquí.
     // ================================================================
     match /tickets/{ticketId} {
       allow read: if isPanelUser();
       allow create: if isSuperAdmin() || ownsAgentId(request.resource.data.agentId);
-      allow update: if isPanelUser();
+      allow update: if isSuperAdmin() || isSeguridad();
       allow delete: if isSuperAdmin() || ownsAgentId(resource.data.agentId);
     }
 
     // ================================================================
     // scans/{id} — bitácora de escaneos (auditoría, solo se añade)
-    // READ/CREATE: cualquier usuario del panel (los tres roles escanean).
+    // READ:   cualquier usuario del panel.
+    // CREATE: SOLO quienes escanean (superadmin y seguridad).
     // No se puede modificar ni borrar: es un registro histórico.
     // ================================================================
     match /scans/{scanId} {
-      allow read, create: if isPanelUser();
+      allow read: if isPanelUser();
+      allow create: if isSuperAdmin() || isSeguridad();
       allow update, delete: if false;
     }
 
