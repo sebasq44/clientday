@@ -15,10 +15,13 @@ import {
 } from 'lucide-react'
 
 import { Badge, Button, Card, EmptyState, Input, Modal, Spinner, useToast } from '../components/ui'
+import { useAuth } from '../hooks/useAuth'
 import { useConfig } from '../hooks/useConfig'
 import { useReservations } from '../hooks/useReservations'
 import { updateConfig } from '../services/configService'
+import { RESET_CONFIRMATION_WORD, resetEvent } from '../services/resetService'
 import { db } from '../lib/firebase'
+import { DEFAULT_CONFIG } from '../lib/seed'
 import {
   COL,
   RESERVATION_STATUS,
@@ -47,6 +50,19 @@ const MONTHS = [
 
 // Inicial del día de la semana tal como se imprime en la entrada (Martes = M, Miércoles = K).
 const WEEKDAY_LETTERS = ['D', 'L', 'M', 'K', 'J', 'V', 'S']
+
+/** Todo lo que el reinicio borra para siempre. Se muestra en la tarjeta y en el primer modal. */
+const RESET_DELETES = [
+  'Todas las reservas: aprobadas, pendientes y rechazadas.',
+  'Todas las entradas y sus códigos QR.',
+  'La bitácora de escaneos de la puerta.',
+  'Los horarios ocupados: todos vuelven a quedar libres.',
+  'Todos los agentes de venta, con sus fotos.',
+  'Todas las cuentas de agentes y de seguridad del panel.',
+]
+
+/** '1 reserva' / '3 reservas' */
+const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`
 
 /** '2026-09-08' -> Date local (evita el corrimiento de zona horaria de new Date('2026-09-08')). */
 function parseDayId(id) {
@@ -133,6 +149,7 @@ export default function AdminSettings() {
   const navigate = useNavigate()
   const location = useLocation()
 
+  const { user, isSuperAdmin } = useAuth()
   const { config, loading, error } = useConfig()
   const { reservations, loading: loadingReservations } = useReservations()
 
@@ -144,6 +161,9 @@ export default function AdminSettings() {
 
   const draftRef = useRef(null)
   const baselineRef = useRef(null)
+  // Tras un reinicio, la configuración que llegue por la suscripción se adopta sí o sí,
+  // aunque hubiese un borrador local a medio editar (ya no tiene sentido conservarlo).
+  const forceAdoptRef = useRef(false)
 
   // Contador de seriales (counters/tickets), solo lectura.
   const [counterNext, setCounterNext] = useState(null)
@@ -157,6 +177,12 @@ export default function AdminSettings() {
   // Confirmaciones.
   const [removeTarget, setRemoveTarget] = useState(null) // { type: 'day'|'hour', index, value, label, count }
   const [pendingPath, setPendingPath] = useState(null)
+
+  // Zona de peligro: reinicio del evento (doble confirmación).
+  const [resetStep, setResetStep] = useState(null) // null | 'warn' | 'confirm'
+  const [resetWord, setResetWord] = useState('')
+  const [resetting, setResetting] = useState(false)
+  const [resetProgress, setResetProgress] = useState('')
 
   const setDraftSafe = useCallback((updater) => {
     setDraft((current) => {
@@ -183,7 +209,13 @@ export default function AdminSettings() {
     baselineRef.current = snapshotJson
     setBaseline(snapshot)
 
-    if (!currentDraft || !isDirty) {
+    if (forceAdoptRef.current) {
+      // Venimos de un reinicio: adoptamos la configuración por defecto recién restaurada.
+      forceAdoptRef.current = false
+      setDraftSafe(pickEditable(config))
+      setErrors({})
+      setRemoteChanged(false)
+    } else if (!currentDraft || !isDirty) {
       // Sin cambios locales: adoptamos lo que venga del servidor.
       setDraftSafe(pickEditable(config))
       setRemoteChanged(false)
@@ -508,6 +540,68 @@ export default function AdminSettings() {
     setDraftSafe(JSON.parse(stringify(baseline)))
     setErrors({})
     setRemoteChanged(false)
+  }
+
+  // --------------------------------------------------- Zona de peligro: reiniciar el evento
+
+  const resetWordOk = resetWord.trim() === RESET_CONFIRMATION_WORD
+
+  const openReset = () => {
+    setResetWord('')
+    setResetProgress('')
+    setResetStep('warn')
+  }
+
+  /** Cerrar está bloqueado mientras el reinicio está en marcha. */
+  const closeReset = () => {
+    if (resetting) return
+    setResetStep(null)
+    setResetWord('')
+    setResetProgress('')
+  }
+
+  const handleReset = async () => {
+    if (resetting || !resetWordOk) return
+
+    setResetting(true)
+    setResetProgress('Preparando el reinicio…')
+    // La configuración que llegue por la suscripción sustituirá al borrador actual.
+    forceAdoptRef.current = true
+
+    try {
+      const result = await resetEvent(user?.uid, (step) => setResetProgress(step))
+
+      // Dejamos el formulario mostrando ya la configuración por defecto recién restaurada,
+      // sin rastro del borrador anterior ni de sus errores.
+      const defaults = pickEditable(DEFAULT_CONFIG)
+      baselineRef.current = stringify(defaults)
+      setBaseline(defaults)
+      setDraftSafe(JSON.parse(stringify(defaults)))
+      setErrors({})
+      setRemoteChanged(false)
+      setNewHour('')
+      setHourError('')
+      setRemoveTarget(null)
+      setPendingPath(null)
+
+      setResetStep(null)
+      setResetWord('')
+      setResetProgress('')
+
+      toast.success(
+        `Sistema reiniciado: se eliminaron ${plural(result.reservations, 'reserva', 'reservas')}, ` +
+          `${plural(result.tickets, 'entrada', 'entradas')}, ` +
+          `${plural(result.agents, 'agente', 'agentes')} y ` +
+          `${plural(result.users, 'cuenta del panel', 'cuentas del panel')}. ` +
+          'La configuración volvió a sus valores por defecto.',
+      )
+    } catch (err) {
+      forceAdoptRef.current = false
+      setResetProgress('')
+      toast.error(err.message)
+    } finally {
+      setResetting(false)
+    }
   }
 
   // --------------------------------------------------- Estados de carga / error / vacío
@@ -884,6 +978,81 @@ export default function AdminSettings() {
         </div>
       </Card>
 
+      {/* 6 ------------------------------------------------ Zona de peligro (solo superadmin) */}
+      {isSuperAdmin && (
+        <div className="pt-6">
+          <Card className="!bg-red-50/60 !ring-2 !ring-red-200">
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
+                <TriangleAlert className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <h2 className="font-display text-sm font-extrabold uppercase tracking-wide text-red-700">
+                  Zona de peligro
+                </h2>
+                <p className="mt-1 text-sm text-red-800/80">
+                  Acciones irreversibles. Solo el administrador principal puede verlas y usarlas.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-white/80 p-4 ring-1 ring-red-200 sm:p-5">
+              <h3 className="text-sm font-bold text-belen-ink">Reiniciar Día del Cliente</h3>
+
+              <p className="mt-1.5 text-sm leading-relaxed text-slate-600">
+                Deja el sistema como recién instalado, listo para organizar el evento del año que
+                viene. Se borra <strong className="text-red-700">para siempre</strong>:
+              </p>
+
+              <ul className="mt-3 space-y-1.5">
+                {RESET_DELETES.map((item) => (
+                  <li key={item} className="flex items-start gap-2 text-sm text-slate-600">
+                    <span
+                      className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0">{item}</span>
+                  </li>
+                ))}
+              </ul>
+
+              <p className="mt-3 text-sm leading-relaxed text-slate-600">
+                Además, la configuración del evento (datos, días, horas, prefijo e interruptores)
+                vuelve a sus valores por defecto y la numeración de las entradas vuelve a empezar en{' '}
+                <strong className="text-belen-ink">1</strong>.{' '}
+                <strong className="text-belen-ink">Tu cuenta de administrador NO se toca:</strong>{' '}
+                seguirás con acceso completo al panel.
+              </p>
+
+              <div className="mt-4 flex gap-3 rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200">
+                <TriangleAlert
+                  className="mt-0.5 h-5 w-5 shrink-0 text-amber-600"
+                  aria-hidden="true"
+                />
+                <p className="min-w-0 text-sm leading-snug text-amber-800">
+                  <strong>Aviso importante:</strong> las cuentas de correo de agentes y seguridad
+                  seguirán existiendo en Firebase Authentication, pero se quedarán{' '}
+                  <strong>sin ningún permiso</strong> (no podrán entrar al panel). Para eliminarlas
+                  del todo hay que borrarlas a mano en la consola de Firebase, en{' '}
+                  <strong>Authentication &gt; Users</strong>.
+                </p>
+              </div>
+
+              <div className="mt-4 flex justify-end border-t border-red-100 pt-4">
+                <Button
+                  variant="danger"
+                  icon={TriangleAlert}
+                  onClick={openReset}
+                  className="w-full sm:w-auto"
+                >
+                  Reiniciar Día del Cliente
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* ------------------------------------------------ Barra pegajosa de guardado */}
       <div className="sticky bottom-4 z-20 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/95 p-3 shadow-card-hover ring-1 ring-belen-blue/15 backdrop-blur">
         <p
@@ -1005,6 +1174,141 @@ export default function AdminSettings() {
           Si sales ahora, se perderán los cambios de configuración que aún no has guardado.
         </p>
       </Modal>
+
+      {/* ------------------------------------------------ Reinicio: paso 1 de 2 (advertencia) */}
+      {isSuperAdmin && (
+        <Modal
+          open={resetStep === 'warn'}
+          onClose={closeReset}
+          size="md"
+          title="Reiniciar Día del Cliente (1 de 2)"
+          footer={
+            <>
+              <Button variant="ghost" onClick={closeReset}>
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                icon={TriangleAlert}
+                onClick={() => {
+                  setResetWord('')
+                  setResetStep('confirm')
+                }}
+              >
+                Sí, entiendo: continuar
+              </Button>
+            </>
+          }
+        >
+          <div className="space-y-4">
+            <div className="flex gap-3 rounded-xl bg-red-50 p-3 ring-1 ring-red-200">
+              <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-600" aria-hidden="true" />
+              <p className="min-w-0 text-sm font-semibold leading-snug text-red-800">
+                Esta acción es IRREVERSIBLE. No hay papelera ni forma de deshacerla: los datos se
+                borran para siempre.
+              </p>
+            </div>
+
+            <div>
+              <p className="text-sm font-semibold text-belen-ink">Se va a borrar:</p>
+              <ul className="mt-2 space-y-1.5">
+                {RESET_DELETES.map((item) => (
+                  <li key={item} className="flex items-start gap-2 text-sm text-slate-600">
+                    <span
+                      className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0">{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <p className="text-sm leading-relaxed text-slate-600">
+              La configuración del evento volverá a sus valores por defecto y la numeración de las
+              entradas empezará de nuevo en <strong className="text-belen-ink">1</strong>. Tu cuenta
+              de administrador no se toca.
+            </p>
+
+            <div className="flex gap-3 rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200">
+              <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
+              <p className="min-w-0 text-sm leading-snug text-amber-800">
+                <strong>Aviso importante:</strong> las cuentas de correo de agentes y seguridad
+                seguirán existiendo en Firebase Authentication, pero se quedarán{' '}
+                <strong>sin ningún permiso</strong> (no podrán entrar al panel). Para eliminarlas del
+                todo hay que borrarlas a mano en la consola de Firebase, en{' '}
+                <strong>Authentication &gt; Users</strong>.
+              </p>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ------------------------------------------------ Reinicio: paso 2 de 2 (teclear palabra) */}
+      {isSuperAdmin && (
+        <Modal
+          open={resetStep === 'confirm'}
+          onClose={closeReset}
+          size="md"
+          title="Reiniciar Día del Cliente (2 de 2)"
+          footer={
+            <>
+              <Button variant="ghost" onClick={closeReset} disabled={resetting}>
+                Cancelar
+              </Button>
+              <Button
+                variant="danger"
+                icon={Trash2}
+                onClick={handleReset}
+                disabled={!resetWordOk}
+                loading={resetting}
+              >
+                Borrar todo y reiniciar
+              </Button>
+            </>
+          }
+        >
+          {resetting ? (
+            <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+              <Spinner size="lg" className="text-red-600" />
+              <p className="text-sm font-semibold text-belen-ink">
+                {resetProgress || 'Reiniciando…'}
+              </p>
+              <p className="text-xs text-slate-500">
+                No cierres ni recargues esta página hasta que termine.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex gap-3 rounded-xl bg-red-50 p-3 ring-1 ring-red-200">
+                <TriangleAlert
+                  className="mt-0.5 h-5 w-5 shrink-0 text-red-600"
+                  aria-hidden="true"
+                />
+                <p className="min-w-0 text-sm font-semibold leading-snug text-red-800">
+                  Última oportunidad para echarte atrás. Al confirmar, se borrarán las reservas, las
+                  entradas, la bitácora, los agentes y las cuentas del panel.
+                </p>
+              </div>
+
+              <Input
+                label={`Para confirmar, escribe ${RESET_CONFIRMATION_WORD}`}
+                value={resetWord}
+                onChange={(event) => setResetWord(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && resetWordOk) handleReset()
+                }}
+                hint={`Escribe exactamente la palabra ${RESET_CONFIRMATION_WORD}, en mayúsculas.`}
+                placeholder={RESET_CONFIRMATION_WORD}
+                autoComplete="off"
+                autoCorrect="off"
+                spellCheck={false}
+                className="font-mono tracking-widest"
+              />
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   )
 }

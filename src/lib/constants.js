@@ -92,7 +92,27 @@ export const HOLDER_TYPE_LABEL = {
 export const SCAN_ACTION = {
   CHECK_IN: 'check_in',
   CHECK_OUT: 'check_out',
+  MEAL: 'meal', // retiró su comida (una sola vez por entrada)
   REJECTED: 'rejected',
+}
+
+export const SCAN_ACTION_LABEL = {
+  check_in: 'Entrada',
+  check_out: 'Salida',
+  meal: 'Comida',
+  rejected: 'Rechazado',
+}
+
+/**
+ * Extras que se registran sobre una entrada ya emitida, cada uno UNA sola vez:
+ *   · comida (`mealAt`)  — se canjea escaneando el mismo QR en el módulo de Comida.
+ *                          Requiere que la entrada esté DENTRO del evento ('inside').
+ *   · premio (`prizeAt`) — lo marca a mano el personal desde la lista de Asistencia.
+ * En ambos casos, la presencia de la fecha significa «ya lo recibió».
+ */
+export const EXTRA = {
+  MEAL: 'meal',
+  PRIZE: 'prize',
 }
 
 // Clases Tailwind por estado. Fuente única de verdad para los badges.
@@ -116,6 +136,10 @@ export const ERRORS = {
   SLOT_TAKEN:
     'Ese agente ya tiene una cita confirmada en ese día y hora. Elige otro horario u otro agente.',
   ALREADY_REVIEWED: 'Esta solicitud ya fue revisada por otro administrador. Actualiza la página.',
+  MEAL_ALREADY_TAKEN: 'Esta entrada ya retiró su comida. No puede retirar otra.',
+  MEAL_NOT_INSIDE:
+    'Esta persona aún no ha registrado su ENTRADA al evento. Primero escanea su entrada en Entrada/Salida.',
+  MEAL_EXITED: 'Esta persona ya salió del evento: no puede retirar comida.',
   NOT_FOUND: 'No encontramos el registro solicitado.',
   QR_INVALID: 'QR inválido: esta entrada no existe en el sistema.',
   QR_ALREADY_USED: 'Entrada ya utilizada: este QR ya registró entrada y salida.',

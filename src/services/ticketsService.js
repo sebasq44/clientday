@@ -1,4 +1,14 @@
-import { collection, getDocs, onSnapshot, orderBy, query, where } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from 'firebase/firestore'
 import QRCode from 'qrcode'
 
 import { db } from '../lib/firebase'
@@ -91,5 +101,40 @@ export async function getTicketsByReservation(reservationId) {
   } catch (error) {
     console.error('[ticketsService] getTicketsByReservation', error)
     throw new Error('No se pudieron cargar las entradas de esta reserva.')
+  }
+}
+
+/**
+ * Marca que esta entrada RECIBIÓ un premio en el evento. Se hace a mano desde la lista de
+ * Asistencia (no hay QR de premio). `prizeAt` con fecha = ya lo recibió.
+ *
+ * @param {string} ticketId
+ * @param {string} adminUid quién lo entregó
+ */
+export async function markPrizeAwarded(ticketId, adminUid) {
+  const id = clean(ticketId)
+  if (!id) throw new Error(ERRORS.NOT_FOUND)
+
+  try {
+    await updateDoc(doc(db, COL.TICKETS, id), {
+      prizeAt: serverTimestamp(),
+      prizeBy: adminUid ?? null,
+    })
+  } catch (error) {
+    console.error('[ticketsService] markPrizeAwarded', error)
+    throw new Error('No se pudo registrar el premio. Revisa tu conexión y tus permisos.')
+  }
+}
+
+/** Deshace la marca de premio (por si se marcó por error). */
+export async function removePrizeAwarded(ticketId) {
+  const id = clean(ticketId)
+  if (!id) throw new Error(ERRORS.NOT_FOUND)
+
+  try {
+    await updateDoc(doc(db, COL.TICKETS, id), { prizeAt: null, prizeBy: null })
+  } catch (error) {
+    console.error('[ticketsService] removePrizeAwarded', error)
+    throw new Error('No se pudo quitar el premio. Revisa tu conexión y tus permisos.')
   }
 }

@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   UserCheck,
   ScanLine,
+  UtensilsCrossed,
   Users,
   UserCog,
   Settings,
@@ -28,7 +29,8 @@ const SCANNER = [ROLE.SUPERADMIN, ROLE.SEGURIDAD]
 const NAV_ITEMS = [
   { to: '/admin', label: 'Resumen', icon: LayoutDashboard, end: true, roles: SUPER },
   { to: '/admin/reservations', label: 'Reservas', icon: CalendarCheck, roles: ALL },
-  { to: '/admin/scanner', label: 'Escáner', icon: ScanLine, roles: SCANNER },
+  { to: '/admin/scanner', label: 'Entrada / Salida', icon: ScanLine, roles: SCANNER },
+  { to: '/admin/food', label: 'Comida', icon: UtensilsCrossed, roles: SCANNER },
   { to: '/admin/attendance', label: 'Asistencia', icon: UserCheck, roles: ALL },
   { to: '/admin/agents', label: 'Agentes', icon: Users, roles: SUPER },
   { to: '/admin/users', label: 'Usuarios', icon: UserCog, roles: SUPER },

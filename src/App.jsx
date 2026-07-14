@@ -12,6 +12,7 @@ import AdminReservations from './pages/AdminReservations'
 import AdminAgents from './pages/AdminAgents'
 import AdminSettings from './pages/AdminSettings'
 import AdminScanner from './pages/AdminScanner'
+import AdminFood from './pages/AdminFood'
 import AdminAttendance from './pages/AdminAttendance'
 import AdminUsers from './pages/AdminUsers'
 
@@ -89,6 +90,15 @@ export default function App() {
               element={
                 <ProtectedRoute roles={SCANNER_ROLES}>
                   <AdminScanner />
+                </ProtectedRoute>
+              }
+            />
+            {/* Comida: mismo QR de la invitación, canjeable UNA vez por entrada. */}
+            <Route
+              path="food"
+              element={
+                <ProtectedRoute roles={SCANNER_ROLES}>
+                  <AdminFood />
                 </ProtectedRoute>
               }
             />

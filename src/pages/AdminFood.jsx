@@ -4,25 +4,22 @@ import {
   AlertTriangle,
   Camera,
   CameraOff,
-  CheckCircle2,
   History,
   Keyboard,
-  LogIn,
-  LogOut,
-  MessageCircle,
   RotateCcw,
   ScanLine,
+  UtensilsCrossed,
   XCircle,
 } from 'lucide-react'
 
 import { useAuth } from '../hooks/useAuth'
-import { useAgents } from '../hooks/useAgents'
 import { useConfig } from '../hooks/useConfig'
-import { processScan, subscribeScans } from '../services/scanService'
+import { processMealScan, subscribeScans } from '../services/scanService'
 import { subscribeTickets } from '../services/ticketsService'
 import {
   HOLDER_TYPE_LABEL,
   SCAN_ACTION,
+  SCAN_ACTION_LABEL,
   TICKET_STATUS,
   formatSerial,
 } from '../lib/constants'
@@ -42,59 +39,29 @@ import Input from '../components/ui/Input'
 import Spinner from '../components/ui/Spinner'
 import { useToast } from '../components/ui/Toast'
 
-/** Id del contenedor donde html5-qrcode inyecta el vídeo de la cámara. */
-const READER_ID = 'qr-reader'
+/**
+ * Id del contenedor donde html5-qrcode inyecta el vídeo.
+ * DEBE ser distinto al de /admin/scanner ('qr-reader'): si ambas páginas compartieran id y las dos
+ * quedaran montadas (transición de ruta), la librería escribiría en el contenedor equivocado.
+ */
+const READER_ID = 'qr-reader-food'
 
 /** Cuántos escaneos de la bitácora se pintan bajo el escáner. */
 const LOG_VISIBLE = 12
 
-/** Cómo se presenta cada acción en la bitácora y en la pantalla de resultado. */
-const ACTION_META = {
-  [SCAN_ACTION.CHECK_IN]: { label: 'Entrada', badge: 'inside', Icon: LogIn },
-  [SCAN_ACTION.CHECK_OUT]: { label: 'Salida', badge: 'exited', Icon: LogOut },
-  [SCAN_ACTION.REJECTED]: { label: 'Rechazado', badge: 'rejected', Icon: XCircle },
-}
-
-/** Prefijo internacional de Costa Rica: todos los agentes tienen número +506. */
-const CR_DIAL_CODE = '506'
-
 /**
- * Arma el enlace de WhatsApp con el mensaje ya escrito para avisarle al agente que su cliente
- * acaba de entrar. Devuelve null si el agente no tiene número registrado.
- *
- * El enlace se abre en una pestaña NUEVA: así, cuando el guarda vuelve al navegador después de
- * pulsar «Enviar» en WhatsApp, se encuentra el escáner exactamente como lo dejó.
+ * En este módulo solo interesan dos acciones: la comida entregada y los intentos rechazados.
+ * Las entradas y salidas de la puerta pertenecen al otro escáner y aquí solo serían ruido.
  */
-function buildWhatsappNoticeUrl({ agent, ticket, config }) {
-  const digits = String(agent?.whatsapp || '').replace(/\D/g, '')
-  if (!digits) return null
-
-  // Si el número ya trae el 506, no lo duplicamos.
-  const phone = digits.startsWith(CR_DIAL_CODE) ? digits : `${CR_DIAL_CODE}${digits}`
-
-  const eventName = [config?.eventName, config?.eventYear].filter(Boolean).join(' ') || 'el evento'
-  const company = ticket.companyName ? ` de ${ticket.companyName}` : ''
-  const code = ticket.clientCode ? ` (código ${ticket.clientCode})` : ''
-  const kind = HOLDER_TYPE_LABEL[ticket.holderType] || ''
-
-  const message = [
-    `Hola ${agent?.name || ''}`.trim() + ',',
-    '',
-    `Tu cliente ${ticket.holderName}${company}${code} acaba de ingresar a ${eventName}.`,
-    `Entrada: ${ticket.serial}${kind ? ` · ${kind}` : ''}`,
-  ].join('\n')
-
-  return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
-}
+const RELEVANT_ACTIONS = new Set([SCAN_ACTION.MEAL, SCAN_ACTION.REJECTED])
 
 /* ------------------------------------------------------------------ */
 /* Página                                                              */
 /* ------------------------------------------------------------------ */
 
-export default function AdminScanner() {
+export default function AdminFood() {
   const { user } = useAuth()
   const { config } = useConfig()
-  const { agents } = useAgents()
   const toast = useToast()
 
   const [cameraActive, setCameraActive] = useState(false)
@@ -138,7 +105,7 @@ export default function AdminScanner() {
         setScansLoading(false)
       })
     } catch (error) {
-      console.error('[AdminScanner] No se pudieron abrir las suscripciones:', error)
+      console.error('[AdminFood] No se pudieron abrir las suscripciones:', error)
       setFeedError('No pudimos conectar con la base de datos. Revisa tu conexión y recarga la página.')
       setTicketsLoading(false)
       setScansLoading(false)
@@ -151,26 +118,20 @@ export default function AdminScanner() {
     }
   }, [])
 
-  /* --- Agente del ticket recién escaneado (para avisarle por WhatsApp) --- */
-  const resultAgent = useMemo(() => {
-    const agentId = result?.ticket?.agentId
-    if (!agentId) return null
-    return agents.find((a) => a.id === agentId) || null
-  }, [agents, result])
-
-  /* --- Contadores en vivo --- */
+  /* --- Contadores en vivo ---
+     · entregadas → la entrada ya retiró su plato (mealAt con fecha)
+     · pendientes → está DENTRO del evento y todavía no lo ha retirado (los únicos que pueden comer)
+  */
   const counts = useMemo(() => {
-    let inside = 0
-    let exited = 0
+    let served = 0
     let pending = 0
 
     for (const ticket of tickets) {
-      if (ticket.status === TICKET_STATUS.INSIDE) inside += 1
-      else if (ticket.status === TICKET_STATUS.EXITED) exited += 1
-      else pending += 1
+      if (ticket.mealAt) served += 1
+      else if (ticket.status === TICKET_STATUS.INSIDE) pending += 1
     }
 
-    return { inside, exited, pending, total: tickets.length }
+    return { served, pending, total: tickets.length }
   }, [tickets])
 
   /**
@@ -186,7 +147,7 @@ export default function AdminScanner() {
       await scanner.stop().then(() => scanner.clear())
     } catch (error) {
       // Ya estaba detenido o el navegador soltó el stream por su cuenta: no hay nada que hacer.
-      console.warn('[AdminScanner] El lector ya estaba detenido:', error?.message || error)
+      console.warn('[AdminFood] El lector ya estaba detenido:', error?.message || error)
     }
   }, [])
 
@@ -213,12 +174,12 @@ export default function AdminScanner() {
         try {
           if (scanner.getState() === Html5QrcodeScannerState.SCANNING) scanner.pause(true)
         } catch (error) {
-          console.warn('[AdminScanner] No se pudo pausar el lector:', error?.message || error)
+          console.warn('[AdminFood] No se pudo pausar el lector:', error?.message || error)
         }
       }
 
       try {
-        const outcome = await processScan(token, user?.uid)
+        const outcome = await processMealScan(token, user?.uid)
         if (!aliveRef.current) return outcome
 
         vibrate(outcome.ok)
@@ -226,8 +187,8 @@ export default function AdminScanner() {
         setResult(outcome)
         return outcome
       } catch (error) {
-        // processScan ya absorbe los fallos previsibles; esto es la red de seguridad final.
-        console.error('[AdminScanner] Error inesperado al procesar el escaneo:', error)
+        // processMealScan ya absorbe los fallos previsibles; esto es la red de seguridad final.
+        console.error('[AdminFood] Error inesperado al procesar el escaneo de comida:', error)
         if (aliveRef.current) {
           const message = error?.message || 'No se pudo procesar el escaneo. Inténtalo de nuevo.'
           vibrate(false)
@@ -274,12 +235,12 @@ export default function AdminScanner() {
       }
       setCameraActive(true)
     } catch (error) {
-      console.error('[AdminScanner] No se pudo iniciar la cámara:', error)
+      console.error('[AdminFood] No se pudo iniciar la cámara:', error)
       scannerRef.current = null
       setCameraActive(false)
       setCameraError(
         'No pudimos abrir la cámara. Concede el permiso en el navegador y asegúrate de entrar por HTTPS. ' +
-          'Mientras tanto, puedes registrar la entrada tecleando el serial.',
+          'Mientras tanto, puedes entregar la comida tecleando el serial.',
       )
     } finally {
       if (aliveRef.current) setCameraStarting(false)
@@ -304,11 +265,11 @@ export default function AdminScanner() {
     try {
       if (scanner.getState() === Html5QrcodeScannerState.PAUSED) scanner.resume()
     } catch (error) {
-      console.warn('[AdminScanner] No se pudo reanudar el lector:', error?.message || error)
+      console.warn('[AdminFood] No se pudo reanudar el lector:', error?.message || error)
     }
   }, [])
 
-  /* --- Respaldo: registrar por serial cuando la cámara falla --- */
+  /* --- Respaldo: entregar por serial cuando la cámara falla --- */
   const handleSerialSubmit = useCallback(
     async (event) => {
       event.preventDefault()
@@ -323,7 +284,7 @@ export default function AdminScanner() {
         return
       }
 
-      // El portero puede teclear "GEN-0007" o simplemente "7": ambos deben encontrar la entrada.
+      // El encargado puede teclear "GEN-0007" o simplemente "7": ambos deben encontrar la entrada.
       const prefix = config?.ticketPrefix || 'GEN'
       const candidate = /^\d+$/.test(typed) ? formatSerial(prefix, Number(typed)) : typed
       const ticket = tickets.find((item) => String(item.serial || '').toUpperCase() === candidate)
@@ -337,6 +298,7 @@ export default function AdminScanner() {
       setSerialError('')
       setSerialBusy(true)
       try {
+        // Las reglas de negocio (dentro del evento, una sola comida) las decide el servicio.
         const outcome = await handleToken(ticket.qrToken)
         if (outcome) setSerialInput('')
       } finally {
@@ -346,41 +308,57 @@ export default function AdminScanner() {
     [config?.ticketPrefix, handleToken, serialInput, tickets, ticketsLoading, toast],
   )
 
-  const visibleScans = useMemo(() => scans.slice(0, LOG_VISIBLE), [scans])
+  const visibleScans = useMemo(
+    () => scans.filter((scan) => RELEVANT_ACTIONS.has(scan.action)).slice(0, LOG_VISIBLE),
+    [scans],
+  )
 
   return (
     <div className="space-y-5">
       {result && (
-        <ScanResultScreen
-          result={result}
-          config={config}
-          agent={resultAgent}
-          onNext={scanNext}
-          onClose={stopCamera}
-        />
+        <MealResultScreen result={result} config={config} onNext={scanNext} onClose={stopCamera} />
       )}
+
+      {/* Encabezado: qué hace este módulo, en una línea */}
+      <div className="flex items-start gap-3 rounded-2xl bg-white p-4 shadow-card ring-1 ring-belen-blue/10 sm:px-6">
+        <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-belen-orange/10 text-belen-orange">
+          <UtensilsCrossed className="h-6 w-6" aria-hidden="true" />
+        </span>
+        <div className="min-w-0">
+          <h1 className="font-display text-base font-extrabold uppercase tracking-wide text-belen-blue">
+            Comida
+          </h1>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Escanea el QR de la invitación para entregar el plato. Solo una comida por persona, y solo
+            si ya registró su entrada al evento.
+          </p>
+        </div>
+      </div>
 
       {/* Contadores en vivo */}
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <CounterTile
-          label="Dentro"
-          value={counts.inside}
+          label="Comidas entregadas"
+          value={counts.served}
           loading={ticketsLoading}
           className="bg-emerald-50 text-emerald-700 ring-emerald-200"
         />
         <CounterTile
-          label="Salieron"
-          value={counts.exited}
+          label="Pendientes"
+          value={counts.pending}
           loading={ticketsLoading}
-          className="bg-slate-100 text-slate-600 ring-slate-200"
+          className="bg-belen-orange/10 text-belen-orange-dark ring-belen-orange/30"
         />
         <CounterTile
-          label="Faltan"
-          value={counts.pending}
+          label="Total de entradas"
+          value={counts.total}
           loading={ticketsLoading}
           className="bg-belen-blue/5 text-belen-blue ring-belen-blue/20"
         />
       </div>
+      <p className="-mt-3 px-1 text-xs text-slate-500">
+        «Pendientes» son las personas que están dentro del evento y todavía no han retirado su plato.
+      </p>
 
       {feedError && (
         <div
@@ -394,14 +372,14 @@ export default function AdminScanner() {
 
       {/* Cámara */}
       <Card
-        title="Control de acceso"
-        subtitle="Apunta al QR de la entrada. El primer escaneo registra la entrada; el segundo, la salida."
+        title="Entrega de comida"
+        subtitle="Apunta al QR de la invitación. Cada entrada puede retirar un único plato."
       >
         <div className="space-y-4">
           {/*
-            IMPORTANTE: #qr-reader lo gestiona html5-qrcode por innerHTML (lo vacía en start()).
-            No debe contener hijos de React o al reconciliarlos React haría removeChild sobre nodos
-            que la librería ya borró (NotFoundError → pantalla en blanco). Por eso el contenedor va
+            IMPORTANTE: el contenedor del lector lo gestiona html5-qrcode por innerHTML (lo vacía en
+            start()). No debe contener hijos de React o al reconciliarlos React haría removeChild
+            sobre nodos que la librería ya borró (NotFoundError → pantalla en blanco). Por eso va
             SIEMPRE vacío y los placeholders son hermanos en un overlay absoluto.
           */}
           <div className="relative mx-auto aspect-square min-h-[15rem] w-full max-w-sm overflow-hidden rounded-2xl bg-belen-ink/95 [&_video]:h-full [&_video]:rounded-2xl [&_video]:object-cover">
@@ -445,7 +423,7 @@ export default function AdminScanner() {
 
           {processing && (
             <p className="flex items-center justify-center gap-2 text-sm font-semibold text-belen-blue">
-              <Spinner size="sm" /> Procesando la entrada…
+              <Spinner size="sm" /> Registrando la comida…
             </p>
           )}
 
@@ -463,7 +441,7 @@ export default function AdminScanner() {
 
       {/* Respaldo manual por serial */}
       <Card
-        title="Registro manual"
+        title="Entrega manual"
         subtitle="Si la cámara falla, teclea el serial impreso en la entrada."
       >
         <form onSubmit={handleSerialSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-start">
@@ -492,13 +470,13 @@ export default function AdminScanner() {
             disabled={processing}
             className="w-full sm:mt-[1.85rem] sm:w-auto"
           >
-            Registrar
+            Entregar
           </Button>
         </form>
       </Card>
 
-      {/* Bitácora en vivo */}
-      <Card title="Últimos escaneos" subtitle="Bitácora en vivo de la puerta.">
+      {/* Bitácora en vivo: solo comidas entregadas e intentos rechazados */}
+      <Card title="Últimas entregas" subtitle="Bitácora en vivo del puesto de comida.">
         {scansLoading ? (
           <div className="flex items-center justify-center gap-3 py-8 text-belen-blue">
             <Spinner size="md" />
@@ -507,25 +485,24 @@ export default function AdminScanner() {
         ) : visibleScans.length === 0 ? (
           <EmptyState
             icon={History}
-            title="Sin escaneos todavía"
-            description="Cuando registres la primera entrada del día, aparecerá aquí."
+            title="Sin entregas todavía"
+            description="Cuando entregues el primer plato del día, aparecerá aquí."
           />
         ) : (
           <ul className="divide-y divide-belen-blue/10">
             {visibleScans.map((scan) => {
-              const meta = ACTION_META[scan.action] || ACTION_META[SCAN_ACTION.REJECTED]
-              const { Icon } = meta
+              const isMeal = scan.action === SCAN_ACTION.MEAL
+              const Icon = isMeal ? UtensilsCrossed : XCircle
+              const label = SCAN_ACTION_LABEL[scan.action] || SCAN_ACTION_LABEL[SCAN_ACTION.REJECTED]
 
               return (
                 <li key={scan.id} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
                   <span
                     className={[
                       'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ring-1',
-                      scan.action === SCAN_ACTION.CHECK_IN
+                      isMeal
                         ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
-                        : scan.action === SCAN_ACTION.CHECK_OUT
-                          ? 'bg-belen-blue/5 text-belen-blue ring-belen-blue/20'
-                          : 'bg-red-50 text-red-700 ring-red-200',
+                        : 'bg-red-50 text-red-700 ring-red-200',
                     ].join(' ')}
                   >
                     <Icon className="h-4 w-4" aria-hidden="true" />
@@ -536,11 +513,11 @@ export default function AdminScanner() {
                       {scan.serial || 'Entrada desconocida'}
                     </p>
                     <p className="truncate text-xs text-slate-500">
-                      {scan.reason ? scan.reason : meta.label} · {formatTime(scan.scannedAt)}
+                      {scan.reason ? scan.reason : label} · {formatTime(scan.scannedAt)}
                     </p>
                   </div>
 
-                  <Badge status={meta.badge}>{meta.label}</Badge>
+                  <Badge status={isMeal ? 'inside' : 'rejected'}>{label}</Badge>
                 </li>
               )
             })}
@@ -558,7 +535,7 @@ export default function AdminScanner() {
 function CounterTile({ label, value, loading, className }) {
   return (
     <div className={`rounded-2xl px-2 py-3 text-center ring-1 sm:px-3 ${className}`}>
-      <p className="text-[10px] font-bold uppercase tracking-wide opacity-80 sm:text-[11px] sm:tracking-wider">
+      <p className="text-[10px] font-bold uppercase leading-tight tracking-wide opacity-80 sm:text-[11px] sm:tracking-wider">
         {label}
       </p>
       <p className="mt-0.5 font-display text-2xl font-extrabold leading-none sm:text-3xl">
@@ -569,24 +546,16 @@ function CounterTile({ label, value, loading, className }) {
 }
 
 /**
- * Pantalla de resultado a página completa. Se lee de un vistazo desde lejos y en la calle:
- * verde = pasa, azul = salió, rojo = no pasa.
+ * Pantalla de resultado a página completa. Se lee de un vistazo y a un metro de distancia:
+ * verde = entrégale el plato, rojo = no le entregues nada (el mensaje explica por qué).
  */
-function ScanResultScreen({ result, config, agent, onNext, onClose }) {
+function MealResultScreen({ result, config, onNext, onClose }) {
   const { action, ticket, message, ok } = result
 
-  const isCheckIn = action === SCAN_ACTION.CHECK_IN
-  const isCheckOut = action === SCAN_ACTION.CHECK_OUT
-
-  // Solo al registrar la ENTRADA se le avisa al agente que su cliente ya llegó.
-  const whatsappUrl =
-    isCheckIn && ticket ? buildWhatsappNoticeUrl({ agent, ticket, config }) : null
-
-  const theme = isCheckIn
-    ? { bg: 'bg-emerald-600', Icon: CheckCircle2, title: 'ENTRADA' }
-    : isCheckOut
-      ? { bg: 'bg-belen-blue', Icon: LogOut, title: 'SALIDA' }
-      : { bg: 'bg-red-600', Icon: XCircle, title: 'RECHAZADO' }
+  const isMeal = action === SCAN_ACTION.MEAL
+  const theme = isMeal
+    ? { bg: 'bg-emerald-600', Icon: UtensilsCrossed, title: 'Comida entregada' }
+    : { bg: 'bg-red-600', Icon: XCircle, title: 'Rechazado' }
 
   const { Icon } = theme
   const holderType = ticket?.holderType ? HOLDER_TYPE_LABEL[ticket.holderType] : null
@@ -600,7 +569,11 @@ function ScanResultScreen({ result, config, agent, onNext, onClose }) {
     >
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-8 sm:px-6 lg:max-w-xl">
         <div className="flex flex-col items-center text-center">
-          <Icon className="h-28 w-28 sm:h-32 sm:w-32 lg:h-40 lg:w-40" strokeWidth={2.25} aria-hidden="true" />
+          <Icon
+            className="h-28 w-28 sm:h-32 sm:w-32 lg:h-40 lg:w-40"
+            strokeWidth={2.25}
+            aria-hidden="true"
+          />
           <h2 className="mt-3 font-display text-4xl font-extrabold uppercase tracking-tight sm:text-5xl lg:text-6xl">
             {theme.title}
           </h2>
@@ -618,6 +591,7 @@ function ScanResultScreen({ result, config, agent, onNext, onClose }) {
           )}
         </div>
 
+        {/* El servicio ya devuelve el motivo en español: ya retiró, no ha entrado, ya salió, QR inválido. */}
         {!ok && message && (
           <p className="mt-5 rounded-2xl bg-white/15 px-4 py-3 text-center text-base font-semibold leading-snug">
             {message}
@@ -628,7 +602,6 @@ function ScanResultScreen({ result, config, agent, onNext, onClose }) {
           <dl className="mt-5 space-y-px overflow-hidden rounded-2xl bg-white/10 text-sm">
             <ResultRow label="Empresa" value={ticket.companyName} />
             <ResultRow label="Código de cliente" value={ticket.clientCode} />
-            <ResultRow label="Agente" value={ticket.agentName} />
             <ResultRow label="Serial" value={ticket.serial} mono />
             <ResultRow
               label="Cita"
@@ -638,13 +611,11 @@ function ScanResultScreen({ result, config, agent, onNext, onClose }) {
                   : null
               }
             />
-            {/* Horas: en ENTRADA basta la de ingreso; en SALIDA se muestran ambas para que el
-                guarda vea de un vistazo cuánto estuvo dentro. En un rechazo, también ambas. */}
-            {(isCheckIn || isCheckOut || !ok) && (
-              <ResultRow label="Hora de ingreso" value={formatTime(ticket.checkInAt)} />
-            )}
-            {(isCheckOut || !ok) && (
-              <ResultRow label="Hora de salida" value={formatTime(ticket.checkOutAt)} />
+            <ResultRow label="Hora de ingreso" value={formatTime(ticket.checkInAt)} />
+            {/* En un rechazo por «ya retiró su comida», esta hora es justo lo que el encargado
+                necesita para explicárselo a la persona. */}
+            {(isMeal || ticket.mealAt) && (
+              <ResultRow label="Hora de entrega" value={formatTime(ticket.mealAt)} />
             )}
           </dl>
         ) : (
@@ -672,28 +643,6 @@ function ScanResultScreen({ result, config, agent, onNext, onClose }) {
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
             Cerrar y apagar la cámara
           </button>
-
-          {/* Aviso al agente por WhatsApp (solo en ENTRADA). Se abre en una pestaña nueva:
-              el guarda pulsa «Enviar» en WhatsApp y al volver al navegador encuentra el
-              escáner tal como lo dejó. */}
-          {isCheckIn && whatsappUrl && (
-            <a
-              href={whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[#25D366] text-base font-extrabold uppercase tracking-wide text-white shadow-card transition-transform active:scale-[0.98]"
-            >
-              <MessageCircle className="h-5 w-5" aria-hidden="true" />
-              Notificar por WhatsApp
-            </a>
-          )}
-
-          {isCheckIn && !whatsappUrl && ticket && (
-            <p className="text-center text-xs font-medium text-white/70">
-              {agent?.name || 'El agente'} no tiene un WhatsApp registrado. Agrégalo en
-              «Agentes» para poder avisarle.
-            </p>
-          )}
         </div>
       </div>
     </div>

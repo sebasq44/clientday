@@ -255,12 +255,15 @@ service cloud.firestore {
     // scans/{id} — bitácora de escaneos (auditoría, solo se añade)
     // READ:   cualquier usuario del panel.
     // CREATE: SOLO quienes escanean (superadmin y seguridad).
-    // No se puede modificar ni borrar: es un registro histórico.
+    // UPDATE: NADIE. Un registro histórico no se reescribe jamás.
+    // DELETE: solo el superadmin, y en la práctica solo lo usa
+    //         «Reiniciar Día del Cliente» (borrón y cuenta nueva).
     // ================================================================
     match /scans/{scanId} {
       allow read: if isPanelUser();
       allow create: if isSuperAdmin() || isSeguridad();
-      allow update, delete: if false;
+      allow update: if false;
+      allow delete: if isSuperAdmin();
     }
 
     // ================================================================

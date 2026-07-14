@@ -1,9 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, Download, FilterX, Ticket, UserCheck } from 'lucide-react'
+import {
+  AlertTriangle,
+  Download,
+  FilterX,
+  Gift,
+  Ticket,
+  UserCheck,
+  UtensilsCrossed,
+} from 'lucide-react'
 
 import { useAgents } from '../hooks/useAgents'
+import { useAuth } from '../hooks/useAuth'
 import { useConfig } from '../hooks/useConfig'
-import { subscribeTickets } from '../services/ticketsService'
+import { markPrizeAwarded, removePrizeAwarded, subscribeTickets } from '../services/ticketsService'
 import { HOLDER_TYPE, HOLDER_TYPE_LABEL, TICKET_STATUS, TICKET_STATUS_LABEL } from '../lib/constants'
 import { csvCell, dayLabel, formatHourRange, formatTime } from '../lib/format'
 import Badge from '../components/ui/Badge'
@@ -11,6 +20,7 @@ import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
 import EmptyState from '../components/ui/EmptyState'
 import Input from '../components/ui/Input'
+import Modal from '../components/ui/Modal'
 import Select from '../components/ui/Select'
 import Spinner from '../components/ui/Spinner'
 import { useToast } from '../components/ui/Toast'
@@ -35,8 +45,21 @@ const CSV_HEADERS = [
   'Estado',
   'Entrada',
   'Salida',
+  'Comida',
+  'Premio',
   'Masterclass',
 ]
+
+/** Base común del distintivo de premio (botón pulsable o indicador de solo lectura). */
+const PRIZE_BASE =
+  'inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-150'
+
+/** Dorado de marca: solo cuando la persona YA recibió su premio. */
+const PRIZE_AWARDED =
+  'belen-glow bg-gradient-to-br from-amber-300 via-amber-400 to-belen-orange text-white shadow-[0_0_12px_rgba(242,106,33,0.55)]'
+
+/** Sin premio: vacío, con un aro muy sutil. */
+const PRIZE_EMPTY = 'bg-transparent text-slate-400 ring-1 ring-slate-200'
 
 /**
  * Marcas diacríticas (U+0300–U+036F). El rango se construye con fromCharCode para que el patrón
@@ -65,7 +88,12 @@ function holderBadgeClass(holderType) {
 export default function AdminAttendance() {
   const { config, error: configError } = useConfig()
   const { agents } = useAgents()
+  const { user, isSuperAdmin, isSeguridad } = useAuth()
   const toast = useToast()
+
+  // Solo el administrador y seguridad pueden escribir en tickets (reglas de Firestore).
+  // El agente ve el premio, pero como indicador de solo lectura.
+  const canAwardPrize = isSuperAdmin || isSeguridad
 
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
@@ -75,6 +103,10 @@ export default function AdminAttendance() {
   const [search, setSearch] = useState('')
   const [dayFilter, setDayFilter] = useState('all')
   const [agentFilter, setAgentFilter] = useState('all')
+
+  // Entrada cuyo premio se está confirmando en el modal, y si ya se está guardando.
+  const [prizeTarget, setPrizeTarget] = useState(null)
+  const [prizeBusy, setPrizeBusy] = useState(false)
 
   useEffect(() => {
     let alive = true
@@ -123,11 +155,14 @@ export default function AdminAttendance() {
   }, [tickets, search, dayFilter, agentFilter])
 
   const counts = useMemo(() => {
-    const result = { inside: 0, exited: 0, valid: 0, all: scoped.length }
+    const result = { inside: 0, exited: 0, valid: 0, meals: 0, prizes: 0, all: scoped.length }
     for (const ticket of scoped) {
       if (ticket.status === TICKET_STATUS.INSIDE) result.inside += 1
       else if (ticket.status === TICKET_STATUS.EXITED) result.exited += 1
       else result.valid += 1
+
+      if (ticket.mealAt) result.meals += 1
+      if (ticket.prizeAt) result.prizes += 1
     }
     return result
   }, [scoped])
@@ -144,6 +179,50 @@ export default function AdminAttendance() {
     setDayFilter('all')
     setAgentFilter('all')
   }, [])
+
+  /** Abre el modal de confirmación del premio (marcar o corregir). */
+  const requestPrize = useCallback(
+    (ticket) => {
+      if (!canAwardPrize) return
+      setPrizeTarget(ticket)
+    },
+    [canAwardPrize],
+  )
+
+  const closePrizeModal = useCallback(() => {
+    if (prizeBusy) return
+    setPrizeTarget(null)
+  }, [prizeBusy])
+
+  /** Confirma el modal: si la entrada ya tenía premio lo QUITA; si no, lo marca. */
+  const confirmPrize = useCallback(async () => {
+    if (!prizeTarget || prizeBusy) return
+
+    const target = prizeTarget
+    const removing = Boolean(target.prizeAt)
+
+    setPrizeBusy(true)
+    try {
+      if (removing) await removePrizeAwarded(target.id)
+      else await markPrizeAwarded(target.id, user?.uid)
+
+      toast.success(
+        removing
+          ? `Quitamos la marca de premio de ${target.holderName}.`
+          : `Registramos el premio de ${target.holderName}.`,
+      )
+      setPrizeTarget(null)
+    } catch (prizeError) {
+      console.error('[AdminAttendance] No se pudo actualizar el premio:', prizeError)
+      toast.error(prizeError?.message || 'No se pudo actualizar el premio. Inténtalo de nuevo.')
+    } finally {
+      setPrizeBusy(false)
+    }
+  }, [prizeTarget, prizeBusy, user, toast])
+
+  // Solo la fila que se está guardando muestra su spinner.
+  const prizeSavingId = prizeBusy ? prizeTarget?.id : null
+  const removingPrize = Boolean(prizeTarget?.prizeAt)
 
   const exportCsv = useCallback(() => {
     if (visible.length === 0) {
@@ -163,6 +242,8 @@ export default function AdminAttendance() {
       TICKET_STATUS_LABEL[ticket.status] || ticket.status,
       formatTime(ticket.checkInAt),
       formatTime(ticket.checkOutAt),
+      ticket.mealAt ? `Sí (${formatTime(ticket.mealAt)})` : 'No',
+      ticket.prizeAt ? `Sí (${formatTime(ticket.prizeAt)})` : 'No',
       ticket.masterclass ? 'Sí' : 'No',
     ])
 
@@ -201,7 +282,7 @@ export default function AdminAttendance() {
       )}
 
       {/* Contadores */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <StatTile
           label="Entradas emitidas"
           value={counts.all}
@@ -225,6 +306,18 @@ export default function AdminAttendance() {
           value={counts.valid}
           loading={loading}
           className="bg-amber-50 text-amber-700 ring-amber-200"
+        />
+        <StatTile
+          label="Comidas entregadas"
+          value={counts.meals}
+          loading={loading}
+          className="bg-white text-emerald-700 ring-emerald-200"
+        />
+        <StatTile
+          label="Premios entregados"
+          value={counts.prizes}
+          loading={loading}
+          className="bg-gradient-to-br from-amber-50 to-orange-50 text-belen-orange ring-belen-orange/25"
         />
       </div>
 
@@ -358,7 +451,14 @@ export default function AdminAttendance() {
               {/* Móvil / tablet: tarjetas (hasta <1024px) */}
               <ul className="space-y-3 lg:hidden">
                 {visible.map((ticket) => (
-                  <TicketCard key={ticket.id} ticket={ticket} config={config} />
+                  <TicketCard
+                    key={ticket.id}
+                    ticket={ticket}
+                    config={config}
+                    canAwardPrize={canAwardPrize}
+                    prizeSaving={prizeSavingId === ticket.id}
+                    onPrize={requestPrize}
+                  />
                 ))}
               </ul>
 
@@ -374,7 +474,11 @@ export default function AdminAttendance() {
                       <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Serial</th>
                       <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Entrada</th>
                       <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Salida</th>
-                      <th className="border-b border-belen-blue/10 py-2 font-bold">Estado</th>
+                      <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Comida</th>
+                      <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Estado</th>
+                      <th className="border-b border-belen-blue/10 py-2 text-right font-bold">
+                        Premio
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -409,8 +513,19 @@ export default function AdminAttendance() {
                         <td className="border-b border-belen-blue/5 py-3 pr-4 text-slate-600">
                           {formatTime(ticket.checkOutAt)}
                         </td>
-                        <td className="border-b border-belen-blue/5 py-3">
+                        <td className="border-b border-belen-blue/5 py-3 pr-4">
+                          <MealBadge ticket={ticket} />
+                        </td>
+                        <td className="border-b border-belen-blue/5 py-3 pr-4">
                           <Badge status={ticket.status} />
+                        </td>
+                        <td className="border-b border-belen-blue/5 py-3 text-right">
+                          <PrizeControl
+                            ticket={ticket}
+                            canAwardPrize={canAwardPrize}
+                            saving={prizeSavingId === ticket.id}
+                            onPrize={requestPrize}
+                          />
                         </td>
                       </tr>
                     ))}
@@ -421,7 +536,137 @@ export default function AdminAttendance() {
           )}
         </div>
       </Card>
+
+      {/* -------- Modal: registrar / quitar premio -------- */}
+      <Modal
+        open={Boolean(prizeTarget)}
+        onClose={closePrizeModal}
+        title={removingPrize ? 'Quitar el premio' : 'Registrar premio'}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={closePrizeModal} disabled={prizeBusy}>
+              Volver
+            </Button>
+            <Button
+              variant={removingPrize ? 'danger' : 'primary'}
+              icon={Gift}
+              loading={prizeBusy}
+              onClick={confirmPrize}
+            >
+              {removingPrize ? 'Sí, quitar el premio' : 'Sí, entregó un premio'}
+            </Button>
+          </>
+        }
+      >
+        {prizeTarget && (
+          <div className="space-y-3">
+            <p className="text-sm font-medium leading-relaxed text-belen-ink">
+              {removingPrize ? (
+                <>
+                  ¿Quitar la marca de premio de{' '}
+                  <strong className="text-belen-blue">{prizeTarget.holderName}</strong>?
+                </>
+              ) : (
+                <>
+                  ¿Registrar que <strong className="text-belen-blue">{prizeTarget.holderName}</strong>{' '}
+                  recibió un premio?
+                </>
+              )}
+            </p>
+
+            <p className="text-xs text-slate-500">
+              {prizeTarget.companyName} ·{' '}
+              <span className="font-mono font-semibold text-belen-blue">{prizeTarget.serial}</span>
+            </p>
+
+            <p className="text-xs leading-relaxed text-slate-500">
+              {removingPrize
+                ? 'Úsalo solo para CORREGIR una marca equivocada: la persona volverá a aparecer como que no ha recibido premio y podrá marcarse de nuevo.'
+                : 'Quedará marcado como entregado en la lista de asistencia. Si te equivocas, puedes quitar la marca volviendo a pulsar el regalo.'}
+            </p>
+          </div>
+        )}
+      </Modal>
     </div>
+  )
+}
+
+/**
+ * Distintivo del premio. Es un BOTÓN si el usuario puede escribir en tickets (superadmin o
+ * seguridad) y la persona está dentro del evento — o ya tiene el premio, para poder corregirlo.
+ * Para el agente (y para quien aún no ha entrado) es solo un indicador.
+ */
+function PrizeControl({ ticket, canAwardPrize, saving, onPrize }) {
+  const awarded = Boolean(ticket.prizeAt)
+  const interactive = canAwardPrize && (awarded || ticket.status === TICKET_STATUS.INSIDE)
+
+  const look = awarded ? PRIZE_AWARDED : PRIZE_EMPTY
+  const stateLabel = awarded
+    ? `${ticket.holderName} ya recibió un premio (${formatTime(ticket.prizeAt)})`
+    : `${ticket.holderName} aún no ha recibido premio`
+
+  if (!interactive) {
+    return (
+      <span
+        className={[PRIZE_BASE, look].join(' ')}
+        title={stateLabel}
+        role="img"
+        aria-label={stateLabel}
+      >
+        <Gift className="h-4 w-4" aria-hidden="true" />
+      </span>
+    )
+  }
+
+  const actionLabel = awarded
+    ? `Quitar el premio de ${ticket.holderName} (se marcó por error)`
+    : `Registrar el premio de ${ticket.holderName}`
+
+  return (
+    <button
+      type="button"
+      onClick={() => onPrize(ticket)}
+      disabled={saving}
+      aria-label={actionLabel}
+      aria-pressed={awarded}
+      title={`${stateLabel} — ${actionLabel}`}
+      className={[
+        PRIZE_BASE,
+        look,
+        awarded
+          ? 'hover:brightness-105'
+          : 'hover:bg-amber-50 hover:text-belen-orange hover:ring-belen-orange/40',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-belen-orange focus-visible:ring-offset-2 focus-visible:ring-offset-white',
+        'disabled:cursor-not-allowed disabled:opacity-60',
+      ].join(' ')}
+    >
+      {saving ? <Spinner size="xs" /> : <Gift className="h-4 w-4" aria-hidden="true" />}
+    </button>
+  )
+}
+
+/** Distintivo informativo de la comida: verde si ya la retiró, muy tenue si no. */
+function MealBadge({ ticket }) {
+  const taken = Boolean(ticket.mealAt)
+
+  return (
+    <span
+      className="inline-flex"
+      title={
+        taken
+          ? `Retiró su comida a las ${formatTime(ticket.mealAt)}`
+          : 'Aún no ha retirado su comida'
+      }
+    >
+      <Badge
+        status={taken ? 'approved' : 'neutral'}
+        className={taken ? '' : '!bg-transparent !text-slate-400 !ring-slate-200'}
+      >
+        <UtensilsCrossed className="h-3 w-3 shrink-0" aria-hidden="true" />
+        {taken ? 'Comida' : 'Sin comida'}
+      </Badge>
+    </span>
   )
 }
 
@@ -436,7 +681,7 @@ function StatTile({ label, value, loading, className }) {
   )
 }
 
-function TicketCard({ ticket, config }) {
+function TicketCard({ ticket, config, canAwardPrize, prizeSaving, onPrize }) {
   return (
     <li className="rounded-2xl bg-white p-4 ring-1 ring-belen-blue/10">
       <div className="flex items-start justify-between gap-3">
@@ -464,6 +709,17 @@ function TicketCard({ ticket, config }) {
         <CardField label="Entrada" value={formatTime(ticket.checkInAt)} />
         <CardField label="Salida" value={formatTime(ticket.checkOutAt)} />
       </dl>
+
+      {/* Comida (informativa) y premio (accionable), al extremo derecho de la tarjeta. */}
+      <div className="mt-3 flex items-center justify-between gap-3 border-t border-belen-blue/10 pt-3">
+        <MealBadge ticket={ticket} />
+        <PrizeControl
+          ticket={ticket}
+          canAwardPrize={canAwardPrize}
+          saving={prizeSaving}
+          onPrize={onPrize}
+        />
+      </div>
     </li>
   )
 }

@@ -46,6 +46,9 @@ const REASON = {
   ALREADY_USED: ERRORS.QR_ALREADY_USED,
   UNKNOWN_STATUS: 'Estado de entrada desconocido',
   JUST_CHECKED_IN: 'La entrada acaba de registrar ingreso',
+  MEAL_ALREADY_TAKEN: 'Ya retiró su comida',
+  MEAL_NOT_INSIDE: 'No ha registrado su entrada al evento',
+  MEAL_EXITED: 'Ya salió del evento',
 }
 
 /** Mensaje que ve el portero cuando el QR ya registró ingreso hace apenas unos segundos. */
@@ -297,6 +300,162 @@ async function resolveScanFromDb(token, scannedBy) {
       message: outcome.message,
     }
   }
+}
+
+/* ================================================================================================
+ * COMIDA — el mismo QR de la invitación sirve para retirar el plato, UNA sola vez.
+ *
+ * Reglas (§ pedidas por el negocio):
+ *   · Solo puede retirar comida quien está DENTRO del evento (ticket.status === 'inside').
+ *     Si aún no registró su entrada, o si ya salió, se rechaza.
+ *   · Una vez retirada (ticket.mealAt con fecha), cualquier intento posterior se rechaza.
+ * El estado de entrada/salida NO se toca aquí: comida es un extra independiente.
+ * ============================================================================================== */
+
+/**
+ * Canjea la comida de una entrada.
+ *
+ * @param {string} qrToken  contenido crudo del QR (el mismo de la invitación)
+ * @param {string} adminUid uid de quien escanea (seguridad o administrador)
+ * @returns {Promise<{ ok: boolean, action: 'meal'|'rejected', ticket: object|null, message: string }>}
+ */
+export async function processMealScan(qrToken, adminUid) {
+  const token = normalizeToken(qrToken)
+  const scannedBy = adminUid ?? null
+
+  if (!token) {
+    await logScanAttempt({
+      ticketId: null,
+      serial: '',
+      action: SCAN_ACTION.REJECTED,
+      reason: REASON.EMPTY,
+      scannedBy,
+    })
+    return { ok: false, action: SCAN_ACTION.REJECTED, ticket: null, message: ERRORS.QR_INVALID }
+  }
+
+  try {
+    const outcome = await withTimeout(resolveMealFromDb(token, scannedBy), SCAN_TIMEOUT_MS)
+
+    if (outcome.__timedOut) {
+      logScanAttempt({
+        ticketId: null,
+        serial: '',
+        action: SCAN_ACTION.REJECTED,
+        reason: 'Tiempo de espera agotado (comida)',
+        scannedBy,
+      })
+      return { ok: false, action: SCAN_ACTION.REJECTED, ticket: null, message: SCAN_SLOW_MESSAGE }
+    }
+
+    return outcome
+  } catch (error) {
+    console.error('[scanService] Error procesando el escaneo de comida:', error)
+    await logScanAttempt({
+      ticketId: null,
+      serial: '',
+      action: SCAN_ACTION.REJECTED,
+      reason: `Error técnico (comida): ${error?.message || 'desconocido'}`,
+      scannedBy,
+    })
+    return {
+      ok: false,
+      action: SCAN_ACTION.REJECTED,
+      ticket: null,
+      message: SCAN_FAILURE_MESSAGE,
+    }
+  }
+}
+
+/** Resuelve el canje de comida contra Firestore, dentro de una transacción. */
+async function resolveMealFromDb(token, scannedBy) {
+  const snap = await getDocs(
+    query(collection(db, COL.TICKETS), where('qrToken', '==', token), limit(1))
+  )
+
+  if (snap.empty) {
+    await logScanAttempt({
+      ticketId: null,
+      serial: '',
+      action: SCAN_ACTION.REJECTED,
+      reason: REASON.NOT_FOUND,
+      scannedBy,
+    })
+    return { ok: false, action: SCAN_ACTION.REJECTED, ticket: null, message: ERRORS.QR_INVALID }
+  }
+
+  const ticketId = snap.docs[0].id
+  const ticketRef = doc(db, COL.TICKETS, ticketId)
+
+  const outcome = await runTransaction(db, async (tx) => {
+    // --- LECTURAS ---
+    const ticketSnap = await tx.get(ticketRef)
+    if (!ticketSnap.exists()) return { missing: true }
+
+    const data = ticketSnap.data()
+    const serial = data.serial || ''
+    const holderName = data.holderName || 'Invitado'
+
+    const scanRef = doc(collection(db, COL.SCANS))
+    const writeScan = (action, reason) =>
+      tx.set(scanRef, {
+        ticketId,
+        serial,
+        action,
+        reason: reason ?? '',
+        scannedAt: serverTimestamp(),
+        scannedBy,
+      })
+
+    // --- 1) ¿Ya retiró su comida? Se relee DENTRO de la transacción: si dos puestos escanean
+    //        el mismo QR a la vez, el segundo reintenta y ve el mealAt ya escrito. Sin doble plato.
+    if (data.mealAt) {
+      writeScan(SCAN_ACTION.REJECTED, REASON.MEAL_ALREADY_TAKEN)
+      return {
+        ok: false,
+        action: SCAN_ACTION.REJECTED,
+        message: ERRORS.MEAL_ALREADY_TAKEN,
+        ticket: mapTicket(ticketId, data),
+      }
+    }
+
+    // --- 2) Debe estar DENTRO del evento.
+    if (data.status !== TICKET_STATUS.INSIDE) {
+      const exited = data.status === TICKET_STATUS.EXITED
+      writeScan(SCAN_ACTION.REJECTED, exited ? REASON.MEAL_EXITED : REASON.MEAL_NOT_INSIDE)
+      return {
+        ok: false,
+        action: SCAN_ACTION.REJECTED,
+        message: exited ? ERRORS.MEAL_EXITED : ERRORS.MEAL_NOT_INSIDE,
+        ticket: mapTicket(ticketId, data),
+      }
+    }
+
+    // --- 3) Canje válido. El estado de entrada/salida NO cambia.
+    const mealAt = new Date()
+    tx.update(ticketRef, { mealAt: serverTimestamp(), mealBy: scannedBy })
+    writeScan(SCAN_ACTION.MEAL, '')
+
+    return {
+      ok: true,
+      action: SCAN_ACTION.MEAL,
+      message: `Comida entregada — ${holderName}`,
+      ticket: mapTicket(ticketId, { ...data, mealAt }),
+    }
+  })
+
+  if (outcome.missing) {
+    await logScanAttempt({
+      ticketId,
+      serial: '',
+      action: SCAN_ACTION.REJECTED,
+      reason: REASON.NOT_FOUND,
+      scannedBy,
+    })
+    return { ok: false, action: SCAN_ACTION.REJECTED, ticket: null, message: ERRORS.QR_INVALID }
+  }
+
+  return outcome
 }
 
 /**

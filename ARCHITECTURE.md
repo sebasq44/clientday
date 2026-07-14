@@ -139,9 +139,28 @@ aprobar y se borra al rechazar/cancelar una reserva ya aprobada.
   status: 'valid',          // 'valid' → 'inside' → 'exited' ; luego cualquier escaneo = inválido
   checkInAt: Timestamp | null,
   checkOutAt: Timestamp | null,
+
+  // --- EXTRAS: cada uno se entrega UNA sola vez. La fecha presente = «ya lo recibió». ---
+  mealAt: Timestamp | null,   // COMIDA: se canjea escaneando el MISMO QR en /admin/food.
+  mealBy: 'uid' | null,       //   Requisito: el ticket debe estar 'inside' (ya entró y no ha salido).
+  prizeAt: Timestamp | null,  // PREMIO: lo marca a mano el personal desde /admin/attendance.
+  prizeBy: 'uid' | null,      //   No hay QR de premio; es un botón en la lista de «Dentro del evento».
+
   createdAt: Timestamp
 }
 ```
+
+**Comida (§ módulo `/admin/food`).** El mismo QR de la invitación sirve para retirar el plato, pero
+solo si la persona está DENTRO del evento y no lo ha retirado ya:
+
+| Estado del ticket | Resultado al escanear en Comida |
+|---|---|
+| `mealAt` con fecha | ❌ «Ya retiró su comida» |
+| `status: 'valid'` (no ha entrado) | ❌ «Primero registra su entrada» |
+| `status: 'exited'` (ya salió) | ❌ «Ya salió del evento» |
+| `status: 'inside'` y sin `mealAt` | ✅ Se entrega y se sella `mealAt` |
+
+El canje de comida **no altera** `status`: entrada/salida y comida son ejes independientes.
 
 ### `counters/tickets` — correlativo del serial
 
@@ -243,8 +262,10 @@ reintentar el envío con un botón "Reenviar correo".
 | `/admin/reservations` | `pages/AdminReservations.jsx` | protegido |
 | `/admin/agents` | `pages/AdminAgents.jsx` | protegido |
 | `/admin/settings` | `pages/AdminSettings.jsx` | protegido |
-| `/admin/scanner` | `pages/AdminScanner.jsx` | protegido |
-| `/admin/attendance` | `pages/AdminAttendance.jsx` (dentro / salió / no asistió) | protegido |
+| `/admin/scanner` | `pages/AdminScanner.jsx` — **Entrada / Salida** | superadmin + seguridad |
+| `/admin/food` | `pages/AdminFood.jsx` — **Comida** (1 canje por entrada) | superadmin + seguridad |
+| `/admin/attendance` | `pages/AdminAttendance.jsx` (dentro / salió / no asistió + premios) | protegido |
+| `/admin/users` | `pages/AdminUsers.jsx` (cuentas de seguridad) | superadmin |
 
 Protegido = envuelto en `components/ProtectedRoute.jsx`, que exige sesión de Firebase Auth **y**
 que exista `admins/{uid}`.
