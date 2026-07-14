@@ -6,22 +6,31 @@ import {
   UserCheck,
   ScanLine,
   Users,
+  UserCog,
   Settings,
   Menu,
   X,
   LogOut,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { ROLE, ROLE_LABEL } from '../lib/constants'
 import Logo from './Logo'
 
-/** Navegación del panel. `end` limita la coincidencia exacta del índice (/admin). */
+const ALL = [ROLE.SUPERADMIN, ROLE.AGENTE, ROLE.SEGURIDAD]
+const SUPER = [ROLE.SUPERADMIN]
+
+/**
+ * Navegación del panel. Cada ítem declara qué roles lo ven. `end` limita la coincidencia exacta
+ * del índice (/admin). El orden se adapta: escáner primero para quienes trabajan en la puerta.
+ */
 const NAV_ITEMS = [
-  { to: '/admin', label: 'Resumen', icon: LayoutDashboard, end: true },
-  { to: '/admin/reservations', label: 'Reservas', icon: CalendarCheck },
-  { to: '/admin/attendance', label: 'Asistencia', icon: UserCheck },
-  { to: '/admin/scanner', label: 'Escáner', icon: ScanLine },
-  { to: '/admin/agents', label: 'Agentes', icon: Users },
-  { to: '/admin/settings', label: 'Ajustes', icon: Settings },
+  { to: '/admin', label: 'Resumen', icon: LayoutDashboard, end: true, roles: SUPER },
+  { to: '/admin/reservations', label: 'Reservas', icon: CalendarCheck, roles: ALL },
+  { to: '/admin/scanner', label: 'Escáner', icon: ScanLine, roles: ALL },
+  { to: '/admin/attendance', label: 'Asistencia', icon: UserCheck, roles: ALL },
+  { to: '/admin/agents', label: 'Agentes', icon: Users, roles: SUPER },
+  { to: '/admin/users', label: 'Usuarios', icon: UserCog, roles: SUPER },
+  { to: '/admin/settings', label: 'Ajustes', icon: Settings, roles: SUPER },
 ]
 
 /** Título de la sección actual a partir de la ruta. */
@@ -34,10 +43,13 @@ function sectionTitle(pathname) {
 }
 
 export default function AdminLayout() {
-  const { user, logout } = useAuth()
+  const { user, role, logout } = useAuth()
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+
+  // Cada rol solo ve los enlaces que le corresponden.
+  const navItems = NAV_ITEMS.filter((item) => item.roles.includes(role))
 
   // Cierra el cajón al navegar.
   useEffect(() => {
@@ -117,7 +129,7 @@ export default function AdminLayout() {
         </p>
 
         <nav className="flex-1 overflow-y-auto pb-4">
-          {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+          {navItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink key={to} to={to} end={end} className={linkClasses}>
               <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
               <span>{label}</span>
@@ -126,7 +138,9 @@ export default function AdminLayout() {
         </nav>
 
         <div className="border-t border-white/10 p-4">
-          <p className="text-[11px] uppercase tracking-wider text-white/50">Administrador</p>
+          <p className="text-[11px] uppercase tracking-wider text-white/50">
+            {ROLE_LABEL[role] || 'Usuario'}
+          </p>
           <p className="mt-1 break-all text-sm font-medium text-white" title={user?.email || ''}>
             {user?.email || 'Sin correo'}
           </p>

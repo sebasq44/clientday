@@ -220,11 +220,13 @@ function ReadOnlyReason({ reservation }) {
 /* ------------------------------------------------------------------ */
 
 export default function AdminReservations() {
-  const { user } = useAuth()
+  // Roles: el agente solo ve/actúa sobre sus propias reservas; seguridad es solo lectura.
+  const { user, isAgente, isSeguridad, agentId } = useAuth()
   const toast = useToast()
   const { config, loading: configLoading } = useConfig()
   const { agents } = useAgents()
-  const { reservations, loading, error } = useReservations()
+  // El agente pide únicamente sus reservas (por agentId); superadmin y seguridad las ven todas.
+  const { reservations, loading, error } = useReservations(isAgente ? { agentId } : {})
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState(ALL)
@@ -557,7 +559,22 @@ export default function AdminReservations() {
     const containerClass = mobile ? 'flex flex-col gap-2' : 'flex flex-wrap items-center gap-2'
     const buttonClass = mobile ? 'w-full' : ''
 
+    // Único botón de solo lectura: abre el modal con los TicketPreview. Lo comparten todos los roles.
+    const viewTicketsButton = (
+      <Button
+        size={size}
+        className={buttonClass}
+        variant="secondary"
+        icon={Ticket}
+        onClick={() => setTicketsTarget(reservation)}
+      >
+        Ver entradas
+      </Button>
+    )
+
     if (reservation.status === RESERVATION_STATUS.PENDING) {
+      // Seguridad es solo lectura: no puede aprobar ni rechazar.
+      if (isSeguridad) return <span className="text-sm text-slate-400">Solo lectura</span>
       return (
         <div className={containerClass}>
           <Button
@@ -590,17 +607,11 @@ export default function AdminReservations() {
     }
 
     if (reservation.status === RESERVATION_STATUS.APPROVED) {
+      // Seguridad solo puede ver las entradas; nada de reenviar correo ni cancelar.
+      if (isSeguridad) return <div className={containerClass}>{viewTicketsButton}</div>
       return (
         <div className={containerClass}>
-          <Button
-            size={size}
-            className={buttonClass}
-            variant="secondary"
-            icon={Ticket}
-            onClick={() => setTicketsTarget(reservation)}
-          >
-            Ver entradas
-          </Button>
+          {viewTicketsButton}
 
           {canResend && (
             <Button
@@ -714,18 +725,21 @@ export default function AdminReservations() {
               ))}
             </Select>
 
-            <Select
-              label="Agente"
-              value={agentFilter}
-              onChange={(event) => setAgentFilter(event.target.value)}
-            >
-              <option value={ALL}>Todos los agentes</option>
-              {agentOptions.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </Select>
+            {/* El agente solo ve sus propias reservas: filtrar por agente no tiene sentido para él. */}
+            {!isAgente && (
+              <Select
+                label="Agente"
+                value={agentFilter}
+                onChange={(event) => setAgentFilter(event.target.value)}
+              >
+                <option value={ALL}>Todos los agentes</option>
+                {agentOptions.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -780,7 +794,7 @@ export default function AdminReservations() {
 
       {/* -------- Contenido -------- */}
       <Card
-        title="Solicitudes de reserva"
+        title={isAgente ? 'Mis solicitudes' : 'Solicitudes de reserva'}
         subtitle={
           isLoading
             ? 'Cargando solicitudes…'

@@ -155,14 +155,35 @@ aprobar y se borra al rechazar/cancelar una reserva ya aprobada.
 { ticketId, serial, action: 'check_in'|'check_out'|'rejected', reason: '', scannedAt: Timestamp, scannedBy: 'uid' }
 ```
 
-### `admins/{uid}` — quién puede entrar al panel
+### `admins/{uid}` — usuarios del panel (con rol)
 
 ```js
-{ email: 'admin@empaquesbelen.com', createdAt: Timestamp }
+{
+  email: 'usuario@empaquesbelen.com',
+  name: 'Nombre',
+  role: 'superadmin' | 'agente' | 'seguridad',  // un doc SIN role = 'superadmin' (compat.)
+  agentId: 'abc123' | null,   // solo para role 'agente': lo enlaza con agents/{agentId}
+  createdAt: Timestamp
+}
 ```
 
-El documento se crea **a mano** desde la consola de Firebase. Su existencia = es admin. Las reglas
-de Firestore leen esta colección; el frontend también la consulta tras el login.
+La existencia de `admins/{uid}` = puede entrar al panel; el campo `role` decide QUÉ puede hacer:
+
+- **superadmin**: acceso total. Crea a los demás usuarios (Seguridad desde /admin/users; Agentes con
+  acceso desde /admin/agents). El superadmin **original** se crea a mano en la consola (su doc puede
+  no tener `role`; se trata como superadmin).
+- **agente**: ve y gestiona **solo sus** reservas (donde `reservation.agentId === su agentId`) +
+  escáner + asistencia. No edita config, agentes ni usuarios.
+- **seguridad**: solo escáner + ver invitaciones/asistencia (lectura). No aprueba ni edita nada.
+
+Las cuentas de Firebase Auth de agente/seguridad se crean desde el cliente con una **app secundaria
+de Firebase** (`lib/firebaseSecondary.js`) para no cerrar la sesión del superadmin. El doc
+`admins/{uid}` lo escribe la sesión del superadmin (las reglas solo se lo permiten a él).
+
+### `agents/{agentId}` — campos de acceso (añadidos)
+
+Además de los campos de §4, un agente con cuenta de acceso lleva: `uid` (su usuario del panel),
+`hasAccess: true` y `accessEmail` (el correo con el que entra).
 
 ## 5. Máquina de estados
 

@@ -234,9 +234,44 @@ Si tu `firebase.json` no quedó con la reescritura, asegúrate de que incluya:
 
 ---
 
+## 5.bis Tipos de usuario (roles)
+
+El panel tiene **tres tipos de usuario**. Cada uno es un documento en `admins/{uid}` con un campo
+`role`; su rol decide qué ve y qué puede hacer. Las **reglas de Firestore lo imponen de verdad**: no
+es solo que se le oculten botones, es que el servidor le niega la operación.
+
+| | Administrador | Agente | Seguridad |
+|---|:---:|:---:|:---:|
+| Resumen, Ajustes, Agentes, Usuarios | ✅ | ❌ | ❌ |
+| Escáner de QR y Asistencia | ✅ | ✅ | ✅ |
+| Ver invitaciones | Todas | **Solo las suyas** | Todas (solo lectura) |
+| Aprobar / rechazar reservas | Todas | **Solo las suyas** | ❌ |
+
+- **Administrador (superadmin).** El que creaste a mano en la consola. Acceso total y es quien crea a
+  los demás. *(Si su documento no tiene el campo `role`, el sistema lo trata como administrador, así
+  que no hace falta que lo edites.)*
+- **Agente.** Entra a gestionar **sus propias** solicitudes: las reservas donde un cliente lo eligió a
+  él. Aprueba, rechaza, reenvía correos y puede escanear en la puerta. No ve las de otros agentes.
+- **Seguridad.** Personal de puerta. Solo escanea entradas y consulta las listas. No puede aprobar ni
+  cambiar nada.
+
+### Cómo crear cada uno
+
+- **Un agente con acceso:** ve a **Agentes**, y en la tarjeta del agente pulsa **«Dar acceso»**.
+  Escribes su correo y una contraseña, y se le crea la cuenta al instante (tu sesión NO se cierra).
+  Le entregas esos datos y ya puede entrar en `/admin/login`. Para quitárselo: **«Revocar acceso»**.
+  El acceso es **opcional**: puedes tener agentes seleccionables en el formulario sin cuenta propia.
+- **Un usuario de seguridad:** ve a **Usuarios** → **«Agregar seguridad»**. Nombre, correo y contraseña.
+
+> Al revocar un acceso, la cuenta de correo sigue existiendo en Firebase Authentication pero se queda
+> **sin ningún permiso** (se borra su documento de `admins`), así que ya no puede entrar al panel.
+
+---
+
 ## 6. Uso diario
 
-Todo el trabajo se hace desde `/admin` (inicia sesión en `/admin/login` con la cuenta administradora).
+Todo el trabajo se hace desde `/admin` (inicia sesión en `/admin/login`). Cada rol aterriza en su
+pantalla: el administrador en el Resumen, el agente en sus reservas y seguridad en el escáner.
 
 - **Resumen** (`/admin`): indicadores en vivo (pendientes, aprobadas, personas esperadas, dentro del
   evento, Masterclass, correos fallidos), calendario de ocupación por agente y día, y el botón para

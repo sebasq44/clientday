@@ -4,7 +4,7 @@ import { AlertCircle, ArrowLeft, Eye, EyeOff, LogIn, LogOut } from 'lucide-react
 import Logo from '../components/Logo'
 import { Button, Input, Spinner } from '../components/ui'
 import { useAuth } from '../hooks/useAuth'
-import { ERRORS } from '../lib/constants'
+import { ERRORS, ROLE_HOME } from '../lib/constants'
 import { isValidEmail } from '../lib/format'
 
 /** Patrón de puntos muy tenue sobre el degradado azul. */
@@ -29,7 +29,7 @@ function LoginBackdrop({ children }) {
 }
 
 export default function AdminLogin() {
-  const { user, isAdmin, loading: authLoading, login, logout } = useAuth()
+  const { user, isAdmin, role, loading: authLoading, login, logout } = useAuth()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -49,9 +49,10 @@ export default function AdminLogin() {
     }
   }, [sessionWithoutPermissions])
 
-  // Ya hay sesión válida de administrador: al panel.
+  // Ya hay sesión válida: a la pantalla principal según el rol (admin → resumen,
+  // agente → sus reservas, seguridad → escáner).
   if (user && isAdmin) {
-    return <Navigate to="/admin" replace />
+    return <Navigate to={ROLE_HOME[role] || '/admin'} replace />
   }
 
   // Comprobando la sesión guardada al abrir la página.
@@ -115,7 +116,7 @@ export default function AdminLogin() {
       <div className="rounded-2xl bg-white p-7 shadow-card sm:p-9">
         <Logo variant="full" className="mx-auto h-32 w-auto" />
 
-        <h1 className="mt-6 text-center font-display text-xl font-extrabold uppercase tracking-tight text-belen-blue">
+        <h1 className="mt-6 text-center font-display text-lg font-extrabold uppercase tracking-tight text-belen-blue sm:text-xl">
           Panel administrativo
         </h1>
         <p className="mt-1.5 text-center text-sm text-slate-500">
@@ -148,9 +149,9 @@ export default function AdminLogin() {
                     icon={LogOut}
                     loading={signingOut}
                     onClick={handleLogout}
-                    className="mt-3"
+                    className="mt-3 w-full sm:w-auto"
                   >
-                    Cerrar sesión y usar otra cuenta
+                    <span className="whitespace-normal">Cerrar sesión y usar otra cuenta</span>
                   </Button>
                 </>
               )}

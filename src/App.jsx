@@ -3,6 +3,7 @@ import { AuthProvider } from './hooks/useAuth'
 import { ToastProvider } from './components/ui/Toast'
 import ProtectedRoute from './components/ProtectedRoute'
 import AdminLayout from './components/AdminLayout'
+import { ROLE } from './lib/constants'
 
 import PublicForm from './pages/PublicForm'
 import AdminLogin from './pages/AdminLogin'
@@ -12,6 +13,12 @@ import AdminAgents from './pages/AdminAgents'
 import AdminSettings from './pages/AdminSettings'
 import AdminScanner from './pages/AdminScanner'
 import AdminAttendance from './pages/AdminAttendance'
+import AdminUsers from './pages/AdminUsers'
+
+// Rutas donde entran los tres roles (control de acceso el día del evento).
+const ALL_ROLES = [ROLE.SUPERADMIN, ROLE.AGENTE, ROLE.SEGURIDAD]
+// Rutas exclusivas del administrador general.
+const SUPER_ONLY = [ROLE.SUPERADMIN]
 
 export default function App() {
   return (
@@ -31,12 +38,65 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<AdminDashboard />} />
-            <Route path="reservations" element={<AdminReservations />} />
-            <Route path="agents" element={<AdminAgents />} />
-            <Route path="settings" element={<AdminSettings />} />
-            <Route path="scanner" element={<AdminScanner />} />
-            <Route path="attendance" element={<AdminAttendance />} />
+            {/* Solo el administrador general */}
+            <Route
+              index
+              element={
+                <ProtectedRoute roles={SUPER_ONLY}>
+                  <AdminDashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="agents"
+              element={
+                <ProtectedRoute roles={SUPER_ONLY}>
+                  <AdminAgents />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="settings"
+              element={
+                <ProtectedRoute roles={SUPER_ONLY}>
+                  <AdminSettings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="users"
+              element={
+                <ProtectedRoute roles={SUPER_ONLY}>
+                  <AdminUsers />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Los tres roles. La propia página adapta lo que cada rol puede ver/hacer. */}
+            <Route
+              path="reservations"
+              element={
+                <ProtectedRoute roles={ALL_ROLES}>
+                  <AdminReservations />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="scanner"
+              element={
+                <ProtectedRoute roles={ALL_ROLES}>
+                  <AdminScanner />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="attendance"
+              element={
+                <ProtectedRoute roles={ALL_ROLES}>
+                  <AdminAttendance />
+                </ProtectedRoute>
+              }
+            />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

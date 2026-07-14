@@ -25,7 +25,7 @@ import {
   formatSerial,
   slotId,
 } from '../lib/constants'
-import { clean, isValidEmail, uuid } from '../lib/format'
+import { clean, isValidEmail, toDate, uuid } from '../lib/format'
 
 /** Prefijo de respaldo si config/general aún no tiene ticketPrefix. */
 const FALLBACK_PREFIX = 'GEN'
@@ -168,15 +168,37 @@ export async function createReservation(data) {
 }
 
 /**
- * Suscripción en tiempo real a todas las reservas, de la más reciente a la más antigua.
+ * Suscripción en tiempo real a las reservas, de la más reciente a la más antigua.
+ *
  * @param {(reservations: object[]) => void} cb
+ * @param {{ agentId?: string }} [options] si se pasa agentId, solo trae las reservas de ESE agente
+ *        (es lo que usa el rol 'agente' para ver únicamente las suyas; las reglas de Firestore
+ *        también lo exigen, así que el filtro no es solo cosmético).
  * @returns {() => void} función para cancelar la suscripción
  */
-export function subscribeReservations(cb) {
-  const q = query(collection(db, COL.RESERVATIONS), orderBy('createdAt', 'desc'))
+export function subscribeReservations(cb, options = {}) {
+  const { agentId } = options
+
+  // Con agentId filtramos por agente pero SIN orderBy en la consulta: combinar where('agentId')
+  // con orderBy('createdAt') exigiría un índice compuesto en Firestore (y rompería la vista del
+  // agente la primera vez). Como un agente tiene pocas reservas, ordenamos en el cliente.
+  const q = agentId
+    ? query(collection(db, COL.RESERVATIONS), where('agentId', '==', agentId))
+    : query(collection(db, COL.RESERVATIONS), orderBy('createdAt', 'desc'))
+
   return onSnapshot(
     q,
-    (snapshot) => cb(snapshot.docs.map(mapReservation)),
+    (snapshot) => {
+      let list = snapshot.docs.map(mapReservation)
+      if (agentId) {
+        list = list.sort((a, b) => {
+          const ta = toDate(a.createdAt)?.getTime() ?? 0
+          const tb = toDate(b.createdAt)?.getTime() ?? 0
+          return tb - ta
+        })
+      }
+      cb(list)
+    },
     (error) => {
       console.error('[reservationsService] subscribeReservations', error)
       cb([])

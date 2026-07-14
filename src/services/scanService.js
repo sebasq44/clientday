@@ -55,6 +55,31 @@ const JUST_CHECKED_IN_MESSAGE = 'La entrada ya registró ingreso hace un momento
 const SCAN_FAILURE_MESSAGE =
   'No se pudo procesar el escaneo. Revisa la conexión e inténtalo de nuevo.'
 
+/**
+ * Tope de espera para resolver un escaneo. Si Firestore no responde en este lapso (WiFi del local
+ * saturado, reintentos internos de la transacción), cortamos y mostramos un mensaje claro en vez de
+ * dejar al portero mirando el spinner 30 segundos. La operación de fondo puede completarse después:
+ * la máquina de estados del ticket es atómica, así que no se corrompe nada, y la lista en vivo se
+ * actualiza sola cuando llegue.
+ */
+const SCAN_TIMEOUT_MS = 12000
+
+/** Mensaje cuando el escaneo tardó más de SCAN_TIMEOUT_MS. */
+const SCAN_SLOW_MESSAGE =
+  'La conexión está lenta y no respondió a tiempo. Vuelve a escanear el código.'
+
+/**
+ * Corre `promise` contra un reloj. Si vence primero, resuelve con { __timedOut: true } (nunca
+ * rechaza). No cancela la promesa original —Firestore no es cancelable—, solo deja de esperarla.
+ */
+function withTimeout(promise, ms) {
+  let timer
+  const clock = new Promise((resolve) => {
+    timer = setTimeout(() => resolve({ __timedOut: true }), ms)
+  })
+  return Promise.race([promise, clock]).finally(() => clearTimeout(timer))
+}
+
 /** Los lectores de QR suelen devolver espacios o saltos de línea alrededor del token. */
 function normalizeToken(qrToken) {
   return String(qrToken ?? '').trim()
@@ -110,6 +135,50 @@ export async function processScan(qrToken, adminUid) {
   }
 
   try {
+    // Toda la resolución (query + transacción) corre contra un reloj: si el local tiene la red
+    // saturada, cortamos en SCAN_TIMEOUT_MS en vez de colgarnos medio minuto.
+    const outcome = await withTimeout(resolveScanFromDb(token, scannedBy), SCAN_TIMEOUT_MS)
+
+    if (outcome.__timedOut) {
+      // No esperamos a la bitácora: registrar el timeout no debe, a su vez, colgarse.
+      logScanAttempt({
+        ticketId: null,
+        serial: '',
+        action: SCAN_ACTION.REJECTED,
+        reason: 'Tiempo de espera agotado',
+        scannedBy,
+      })
+      return { ok: false, action: SCAN_ACTION.REJECTED, ticket: null, message: SCAN_SLOW_MESSAGE }
+    }
+
+    return outcome
+  } catch (error) {
+    // Fallo de infraestructura (red, permisos, transacción agotada). No rompemos la fila de la
+    // puerta con una excepción: devolvemos un rechazo explicable y dejamos rastro en la bitácora.
+    console.error('[scanService] Error procesando el escaneo:', error)
+    await logScanAttempt({
+      ticketId: null,
+      serial: '',
+      action: SCAN_ACTION.REJECTED,
+      reason: `Error técnico: ${error?.message || 'desconocido'}`,
+      scannedBy,
+    })
+    return {
+      ok: false,
+      action: SCAN_ACTION.REJECTED,
+      ticket: null,
+      message: SCAN_FAILURE_MESSAGE,
+    }
+  }
+}
+
+/**
+ * Resuelve el escaneo contra Firestore: busca el ticket por su qrToken y aplica la máquina de
+ * estados dentro de una transacción. Devuelve SIEMPRE el objeto-resultado que consume la UI
+ * (nunca lanza para los casos previsibles; los de infraestructura suben al catch de processScan).
+ */
+async function resolveScanFromDb(token, scannedBy) {
+  {
     // 1) Las queries NO se permiten dentro de una transacción: resolvemos el id aquí fuera.
     const snap = await getDocs(
       query(collection(db, COL.TICKETS), where('qrToken', '==', token), limit(1))
@@ -226,23 +295,6 @@ export async function processScan(qrToken, adminUid) {
       action: outcome.action,
       ticket: outcome.ticket,
       message: outcome.message,
-    }
-  } catch (error) {
-    // Fallo de infraestructura (red, permisos, transacción agotada). No rompemos la fila de la
-    // puerta con una excepción: devolvemos un rechazo explicable y dejamos rastro en la bitácora.
-    console.error('[scanService] Error procesando el escaneo:', error)
-    await logScanAttempt({
-      ticketId: null,
-      serial: '',
-      action: SCAN_ACTION.REJECTED,
-      reason: `Error técnico: ${error?.message || 'desconocido'}`,
-      scannedBy,
-    })
-    return {
-      ok: false,
-      action: SCAN_ACTION.REJECTED,
-      ticket: null,
-      message: SCAN_FAILURE_MESSAGE,
     }
   }
 }

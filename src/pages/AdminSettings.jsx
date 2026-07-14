@@ -682,8 +682,8 @@ export default function AdminSettings() {
                   key={`day-${index}`}
                   className="rounded-2xl bg-belen-cream/60 p-3 ring-1 ring-belen-blue/10"
                 >
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-12">
-                    <div className="sm:col-span-4">
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+                    <div className="xl:col-span-4">
                       <Input
                         label="Fecha"
                         type="date"
@@ -693,7 +693,7 @@ export default function AdminSettings() {
                       />
                     </div>
 
-                    <div className="sm:col-span-4">
+                    <div className="xl:col-span-4">
                       <Input
                         label="Nombre visible"
                         value={day.label}
@@ -703,7 +703,7 @@ export default function AdminSettings() {
                       />
                     </div>
 
-                    <div className="sm:col-span-2">
+                    <div className="xl:col-span-2">
                       <Input
                         label="Letra"
                         value={day.letter}
@@ -717,7 +717,7 @@ export default function AdminSettings() {
                       />
                     </div>
 
-                    <div className="flex items-end justify-between gap-2 sm:col-span-2">
+                    <div className="flex items-end justify-between gap-2 xl:col-span-2">
                       <label className="flex cursor-pointer items-center gap-2 pb-2.5">
                         <input
                           type="checkbox"
@@ -819,7 +819,12 @@ export default function AdminSettings() {
             />
           </div>
           <div className="sm:pt-[1.85rem]">
-            <Button variant="secondary" icon={Plus} onClick={addHour}>
+            <Button
+              variant="secondary"
+              icon={Plus}
+              onClick={addHour}
+              className="w-full sm:w-auto"
+            >
               Agregar hora
             </Button>
           </div>

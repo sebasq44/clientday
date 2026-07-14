@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { ShieldAlert, LogOut } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
-import { ERRORS } from '../lib/constants'
+import { ERRORS, ROLE_HOME } from '../lib/constants'
 import Logo from './Logo'
 import Spinner from './ui/Spinner'
 import Button from './ui/Button'
@@ -11,10 +11,15 @@ import Button from './ui/Button'
  * Envuelve las rutas del panel: exige sesión de Firebase Auth Y que exista admins/{uid}.
  * - Cargando  -> pantalla completa con el logo y un spinner.
  * - Sin sesión -> redirige a /admin/login.
- * - Con sesión pero sin ser admin -> pantalla "Sin permisos" con botón para cerrar sesión.
+ * - Con sesión pero sin ser usuario del panel -> pantalla "Sin permisos" con botón de cerrar sesión.
+ * - Con `roles` y el rol del usuario NO está permitido -> lo reenvía a su pantalla principal.
+ *
+ * @param {object} props
+ * @param {React.ReactNode} props.children
+ * @param {string[]} [props.roles] roles permitidos para esta ruta (si se omite, cualquier usuario del panel).
  */
-export default function ProtectedRoute({ children }) {
-  const { user, isAdmin, loading, logout } = useAuth()
+export default function ProtectedRoute({ children, roles }) {
+  const { user, isAdmin, role, loading, logout } = useAuth()
   const [signingOut, setSigningOut] = useState(false)
 
   if (loading) {
@@ -88,6 +93,11 @@ export default function ProtectedRoute({ children }) {
         </div>
       </div>
     )
+  }
+
+  // El usuario es del panel pero su rol no tiene acceso a ESTA ruta: lo mandamos a su inicio.
+  if (Array.isArray(roles) && roles.length > 0 && !roles.includes(role)) {
+    return <Navigate to={ROLE_HOME[role] || '/admin'} replace />
   }
 
   return children

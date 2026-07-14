@@ -134,7 +134,7 @@ function KpiCard({ icon: Icon, label, value, hint, tone = 'blue', alert = false,
 
 function KpiSkeletonRow() {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {[0, 1, 2, 3, 4, 5].map((i) => (
         <Card key={i} className="h-full">
           <div className="flex items-center gap-4">
@@ -302,6 +302,7 @@ export default function AdminDashboard() {
           icon={Copy}
           loading={copying}
           onClick={handleCopyLink}
+          className="w-full sm:w-auto"
         >
           Copiar enlace del formulario
         </Button>
@@ -322,7 +323,7 @@ export default function AdminDashboard() {
       {isLoading ? (
         <KpiSkeletonRow />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <KpiCard
             icon={Clock}
             tone="amber"

@@ -306,7 +306,7 @@ export default function AdminScanner() {
 
       await startRearCamera(
         scanner,
-        { fps: 10, qrbox: qrboxFromViewfinder },
+        { fps: 15, qrbox: qrboxFromViewfinder },
         (decodedText) => {
           handleToken(decodedText)
         },
@@ -445,7 +445,7 @@ export default function AdminScanner() {
             que la librería ya borró (NotFoundError → pantalla en blanco). Por eso el contenedor va
             SIEMPRE vacío y los placeholders son hermanos en un overlay absoluto.
           */}
-          <div className="relative mx-auto min-h-[15rem] w-full max-w-sm overflow-hidden rounded-2xl bg-belen-ink/95 [&_video]:rounded-2xl">
+          <div className="relative mx-auto aspect-square min-h-[15rem] w-full max-w-sm overflow-hidden rounded-2xl bg-belen-ink/95 [&_video]:h-full [&_video]:rounded-2xl [&_video]:object-cover">
             <div id={READER_ID} className="h-full w-full" />
 
             {!cameraActive && !cameraStarting && (
@@ -598,8 +598,10 @@ export default function AdminScanner() {
 
 function CounterTile({ label, value, loading, className }) {
   return (
-    <div className={`rounded-2xl px-3 py-3 text-center ring-1 ${className}`}>
-      <p className="text-[11px] font-bold uppercase tracking-wider opacity-80">{label}</p>
+    <div className={`rounded-2xl px-2 py-3 text-center ring-1 sm:px-3 ${className}`}>
+      <p className="text-[10px] font-bold uppercase tracking-wide opacity-80 sm:text-[11px] sm:tracking-wider">
+        {label}
+      </p>
       <p className="mt-0.5 font-display text-2xl font-extrabold leading-none sm:text-3xl">
         {loading ? <Spinner size="sm" /> : value}
       </p>
@@ -633,15 +635,17 @@ function ScanResultScreen({ result, config, onNext, onClose }) {
       aria-label={theme.title}
       className={`fixed inset-0 z-[60] flex flex-col overflow-y-auto text-white ${theme.bg}`}
     >
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-8">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-8 sm:px-6 lg:max-w-xl">
         <div className="flex flex-col items-center text-center">
-          <Icon className="h-28 w-28 sm:h-32 sm:w-32" strokeWidth={2.25} aria-hidden="true" />
-          <h2 className="mt-3 font-display text-4xl font-extrabold uppercase tracking-tight sm:text-5xl">
+          <Icon className="h-28 w-28 sm:h-32 sm:w-32 lg:h-40 lg:w-40" strokeWidth={2.25} aria-hidden="true" />
+          <h2 className="mt-3 font-display text-4xl font-extrabold uppercase tracking-tight sm:text-5xl lg:text-6xl">
             {theme.title}
           </h2>
 
           {ticket?.holderName && (
-            <p className="mt-3 text-2xl font-bold leading-tight sm:text-3xl">{ticket.holderName}</p>
+            <p className="mt-3 text-2xl font-bold leading-tight sm:text-3xl lg:text-4xl">
+              {ticket.holderName}
+            </p>
           )}
 
           {holderType && (

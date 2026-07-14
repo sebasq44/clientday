@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db } from '../lib/firebase'
-import { COL } from '../lib/constants'
+import { COL, ROLE } from '../lib/constants'
 import { ensureSeedData } from '../lib/seed'
 
 /**
@@ -35,6 +35,12 @@ export function translateAuthError(code) {
 const AuthContext = createContext({
   user: null,
   isAdmin: false,
+  role: null,
+  agentId: null,
+  profile: null,
+  isSuperAdmin: false,
+  isAgente: false,
+  isSeguridad: false,
   loading: true,
   login: async () => {},
   logout: async () => {},
@@ -43,6 +49,8 @@ const AuthContext = createContext({
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [isAdmin, setIsAdmin] = useState(false)
+  // Perfil del panel (documento admins/{uid}) con su rol y, si es agente, su agentId.
+  const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
   // Evita ejecutar el seed más de una vez por sesión de administrador.
@@ -58,30 +66,39 @@ export function AuthProvider({ children }) {
         seededUidRef.current = null
         setUser(null)
         setIsAdmin(false)
+        setProfile(null)
         setLoading(false)
         return
       }
 
       setLoading(true)
 
-      let admin = false
+      let panelProfile = null
       try {
         const adminSnap = await getDoc(doc(db, COL.ADMINS, firebaseUser.uid))
-        admin = adminSnap.exists()
+        // Un doc sin `role` es el administrador original: se trata como superadmin.
+        if (adminSnap.exists()) {
+          const data = adminSnap.data()
+          panelProfile = { ...data, role: data.role || ROLE.SUPERADMIN }
+        }
       } catch (error) {
-        // Sin permisos de lectura o sin red: tratamos al usuario como NO administrador.
-        admin = false
-        console.error('No se pudo verificar los permisos de administrador:', error)
+        // Sin permisos de lectura o sin red: tratamos al usuario como NO usuario del panel.
+        panelProfile = null
+        console.error('No se pudo verificar los permisos del usuario:', error)
       }
 
       // Otro cambio de sesión ocurrió mientras consultábamos: descartamos este resultado.
       if (run !== authRunRef.current) return
 
+      const admin = panelProfile !== null
       setUser(firebaseUser)
       setIsAdmin(admin)
+      setProfile(panelProfile)
       setLoading(false)
 
-      if (admin && seededUidRef.current !== firebaseUser.uid) {
+      // Solo el superadmin puede (y debe) crear los datos iniciales; las reglas bloquean al resto.
+      const isSuper = admin && panelProfile.role === ROLE.SUPERADMIN
+      if (isSuper && seededUidRef.current !== firebaseUser.uid) {
         seededUidRef.current = firebaseUser.uid
         try {
           await ensureSeedData()
@@ -117,15 +134,33 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
+  const role = profile?.role ?? null
+  const agentId = profile?.agentId ?? null
+
   const value = useMemo(
-    () => ({ user, isAdmin, loading, login, logout }),
-    [user, isAdmin, loading, login, logout]
+    () => ({
+      user,
+      isAdmin,
+      profile,
+      role,
+      agentId,
+      isSuperAdmin: role === ROLE.SUPERADMIN,
+      isAgente: role === ROLE.AGENTE,
+      isSeguridad: role === ROLE.SEGURIDAD,
+      loading,
+      login,
+      logout,
+    }),
+    [user, isAdmin, profile, role, agentId, loading, login, logout]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-/** Acceso al contexto de sesión: { user, isAdmin, loading, login, logout } */
+/**
+ * Acceso al contexto de sesión:
+ * { user, isAdmin, profile, role, agentId, isSuperAdmin, isAgente, isSeguridad, loading, login, logout }
+ */
 export function useAuth() {
   const context = useContext(AuthContext)
   if (!context) {

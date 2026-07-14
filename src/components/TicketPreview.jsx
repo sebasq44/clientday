@@ -141,7 +141,7 @@ export default function TicketPreview({ ticket, config }) {
 
   return (
     <div className="w-full overflow-x-auto print:overflow-x-visible">
-      <article className="mx-auto w-full min-w-[300px] max-w-[900px] overflow-hidden rounded-2xl border-2 border-belen-blue bg-white shadow-card print:shadow-none">
+      <article className="mx-auto w-full max-w-[900px] overflow-hidden rounded-2xl border-2 border-belen-blue bg-white shadow-card print:shadow-none">
         <div className="flex flex-col print:flex-row md:flex-row">
         {/* ---------------- CUERPO ---------------- */}
         <div className="flex-1 p-5 sm:p-6">

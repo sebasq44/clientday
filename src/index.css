@@ -62,6 +62,222 @@
   @apply rounded-lg bg-belen-blue px-4 py-2 text-sm font-semibold text-white;
 }
 
+/* ==================================================================
+   ANIMACIONES — Formulario público
+   Pensadas para que la reserva se sienta viva y premiada, sin marear.
+   Todas se desactivan si el usuario pide menos movimiento (ver el final).
+   ================================================================== */
+
+/* --- Entrada escalonada de las secciones --- */
+@keyframes belenFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.belen-fade-up {
+  animation: belenFadeUp 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.belen-delay-1 {
+  animation-delay: 0.09s;
+}
+.belen-delay-2 {
+  animation-delay: 0.18s;
+}
+.belen-delay-3 {
+  animation-delay: 0.27s;
+}
+.belen-delay-4 {
+  animation-delay: 0.36s;
+}
+.belen-delay-5 {
+  animation-delay: 0.45s;
+}
+
+/* --- Palomita de éxito: burbuja, onda expansiva y trazo dibujado --- */
+@keyframes belenPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  60% {
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.belen-pop {
+  animation: belenPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes belenRing {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.8);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.75);
+  }
+}
+
+.belen-ring {
+  animation: belenRing 1.15s ease-out 0.25s infinite;
+}
+
+/* El trazo se "dibuja" ocultando su longitud y descubriéndola. */
+@keyframes belenDraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.belen-draw {
+  stroke-dasharray: 48;
+  stroke-dashoffset: 48;
+  animation: belenDraw 0.5s cubic-bezier(0.65, 0, 0.35, 1) 0.35s forwards;
+}
+
+/* --- Destello que barre la tarjeta del agente al seleccionarlo --- */
+@keyframes belenShine {
+  0% {
+    transform: translateX(-130%) skewX(-18deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(230%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+
+.belen-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 45%;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 35%,
+    rgba(255, 255, 255, 0.85) 50%,
+    rgba(255, 255, 255, 0.15) 65%,
+    transparent 100%
+  );
+  animation: belenShine 0.85s ease-out 1;
+}
+
+/* Halo naranja que late suavemente en el agente elegido. */
+@keyframes belenGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(242, 106, 33, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(242, 106, 33, 0);
+  }
+}
+
+.belen-glow {
+  animation: belenGlow 1.9s ease-out infinite;
+}
+
+/* --- Rebote al elegir día / hora / sí-no --- */
+@keyframes belenPick {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(1.07);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.belen-pick {
+  animation: belenPick 0.32s cubic-bezier(0.34, 1.56, 0.64, 1) 1;
+}
+
+/* --- Brillo que recorre el botón principal para llamar la atención --- */
+@keyframes belenSweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  55%,
+  100% {
+    transform: translateX(220%);
+  }
+}
+
+.belen-sweep::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 38%;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent,
+    rgba(255, 255, 255, 0.42),
+    transparent
+  );
+  animation: belenSweep 2.9s ease-in-out infinite;
+}
+
+/* --- Flotación muy leve del sello de la cabecera --- */
+@keyframes belenFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-9px);
+  }
+}
+
+.belen-float {
+  animation: belenFloat 6s ease-in-out infinite;
+}
+
+/* Accesibilidad: si el sistema pide menos movimiento, lo apagamos todo.
+   El contenido sigue visible; solo desaparece la animación. */
+@media (prefers-reduced-motion: reduce) {
+  .belen-fade-up,
+  .belen-pop,
+  .belen-ring,
+  .belen-draw,
+  .belen-glow,
+  .belen-pick,
+  .belen-float {
+    animation: none !important;
+  }
+  .belen-shine::after,
+  .belen-sweep::after {
+    animation: none !important;
+    display: none;
+  }
+  .belen-draw {
+    stroke-dashoffset: 0;
+  }
+}
+
 @media print {
   .no-print {
     display: none !important;

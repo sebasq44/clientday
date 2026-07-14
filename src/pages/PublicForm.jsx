@@ -26,6 +26,7 @@ import { createReservation } from '../services/reservationsService'
 import { getOccupiedSlots, subscribeOccupiedSlots } from '../services/availabilityService'
 
 import { ERRORS, slotId } from '../lib/constants'
+import { celebrateReservation } from '../lib/celebrate'
 import { clean, dayLabel, dayLetter, formatHourRange, isValidEmail } from '../lib/format'
 
 /* ------------------------------------------------------------------------------------------------
@@ -163,14 +164,14 @@ function YesNoCards({ value, onChange, invalid = false, yesLabel = 'Sí', noLabe
             'relative flex h-14 items-center justify-center rounded-xl bg-white text-sm font-semibold',
             'transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-belen-orange focus-visible:ring-offset-2',
             option.selected
-              ? 'text-belen-blue shadow-card ring-2 ring-belen-orange'
+              ? 'belen-pick text-belen-blue shadow-card ring-2 ring-belen-orange'
               : invalid
                 ? 'text-slate-600 ring-1 ring-red-300 hover:ring-belen-blue/40'
                 : 'text-slate-600 ring-1 ring-belen-blue/15 hover:bg-belen-blue/5 hover:ring-belen-blue/40',
           ].join(' ')}
         >
           {option.selected && (
-            <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-belen-orange text-white">
+            <span className="belen-pop absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-belen-orange text-white">
               <Check className="h-3 w-3" aria-hidden="true" />
             </span>
           )}
@@ -188,15 +189,16 @@ function AgentCard({ agent, selected, onSelect }) {
       aria-pressed={selected}
       onClick={() => onSelect(agent.id)}
       className={[
-        'group relative flex flex-col items-center gap-2 rounded-2xl bg-white p-3 text-center',
+        // `overflow-hidden` es lo que recorta el destello (.belen-shine) al contorno de la tarjeta.
+        'group relative flex flex-col items-center gap-2 overflow-hidden rounded-2xl bg-white p-3 text-center',
         'transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-belen-orange focus-visible:ring-offset-2',
         selected
-          ? 'shadow-card ring-2 ring-belen-orange'
+          ? 'belen-shine belen-glow scale-[1.03] shadow-card ring-2 ring-belen-orange'
           : 'ring-1 ring-belen-blue/15 hover:-translate-y-0.5 hover:shadow-card hover:ring-belen-blue/40',
       ].join(' ')}
     >
       {selected && (
-        <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-belen-orange text-white shadow-sm">
+        <span className="belen-pop absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-belen-orange text-white shadow-sm">
           <Check className="h-3 w-3" aria-hidden="true" />
         </span>
       )}
@@ -205,15 +207,28 @@ function AgentCard({ agent, selected, onSelect }) {
         <img
           src={agent.photoBase64}
           alt=""
-          className="h-16 w-16 rounded-full object-cover ring-2 ring-white shadow-sm sm:h-20 sm:w-20"
+          className={[
+            'h-16 w-16 rounded-full object-cover shadow-sm transition-all duration-300 sm:h-20 sm:w-20',
+            selected ? 'ring-4 ring-belen-orange/60' : 'ring-2 ring-white group-hover:ring-belen-blue/20',
+          ].join(' ')}
         />
       ) : (
-        <span className="flex h-16 w-16 items-center justify-center rounded-full bg-belen-blue text-lg font-bold text-white sm:h-20 sm:w-20">
+        <span
+          className={[
+            'flex h-16 w-16 items-center justify-center rounded-full bg-belen-blue text-lg font-bold text-white transition-all duration-300 sm:h-20 sm:w-20',
+            selected ? 'ring-4 ring-belen-orange/60' : 'ring-2 ring-white',
+          ].join(' ')}
+        >
           {initials(agent.name)}
         </span>
       )}
 
-      <span className="line-clamp-2 text-xs font-semibold leading-tight text-belen-ink sm:text-sm">
+      <span
+        className={[
+          'line-clamp-2 text-xs font-semibold leading-tight transition-colors sm:text-sm',
+          selected ? 'text-belen-orange-dark' : 'text-belen-ink',
+        ].join(' ')}
+      >
         {agent.name}
       </span>
     </button>
@@ -238,8 +253,8 @@ function HourButton({ hour, selected, occupied, disabled, onSelect }) {
           : disabled
             ? 'cursor-not-allowed bg-white text-slate-300 ring-1 ring-slate-200'
             : selected
-              ? 'bg-belen-blue text-white shadow-card ring-2 ring-belen-orange'
-              : 'bg-white text-belen-ink ring-1 ring-belen-blue/15 hover:bg-belen-blue/5 hover:ring-belen-blue/40',
+              ? 'belen-pick bg-belen-blue text-white shadow-card ring-2 ring-belen-orange'
+              : 'bg-white text-belen-ink ring-1 ring-belen-blue/15 hover:scale-105 hover:bg-belen-blue/5 hover:ring-belen-blue/40',
       ].join(' ')}
     >
       <span>{hour}</span>
@@ -262,8 +277,8 @@ function DayPill({ day, selected, onSelect }) {
         'flex items-center gap-2.5 rounded-full py-2 pl-2 pr-4 text-sm font-semibold',
         'transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-belen-orange focus-visible:ring-offset-2',
         selected
-          ? 'bg-belen-blue text-white shadow-card ring-2 ring-belen-orange'
-          : 'bg-white text-belen-ink ring-1 ring-belen-blue/15 hover:bg-belen-blue/5 hover:ring-belen-blue/40',
+          ? 'belen-pick bg-belen-blue text-white shadow-card ring-2 ring-belen-orange'
+          : 'bg-white text-belen-ink ring-1 ring-belen-blue/15 hover:-translate-y-0.5 hover:bg-belen-blue/5 hover:ring-belen-blue/40',
       ].join(' ')}
     >
       <span
@@ -313,20 +328,20 @@ function Header({ config }) {
       <Logo
         variant="mark"
         aria-hidden="true"
-        className="belen-logo-white pointer-events-none absolute -right-16 -top-10 h-56 w-auto opacity-[0.07] sm:-right-10 sm:h-72"
+        className="belen-logo-white belen-float pointer-events-none absolute -right-16 -top-10 h-56 w-auto opacity-[0.07] sm:-right-10 sm:h-72"
       />
       <Logo
         variant="mark"
         aria-hidden="true"
-        className="belen-logo-white pointer-events-none absolute -bottom-16 -left-20 h-56 w-auto opacity-[0.05] sm:h-64"
+        className="belen-logo-white belen-float belen-delay-3 pointer-events-none absolute -bottom-16 -left-20 h-56 w-auto opacity-[0.05] sm:h-64"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 -top-24 mx-auto h-56 w-56 rounded-full bg-belen-orange/20 blur-3xl"
+        className="belen-glow pointer-events-none absolute inset-x-0 -top-24 mx-auto h-56 w-56 rounded-full bg-belen-orange/20 blur-3xl"
       />
 
       <div className="relative mx-auto flex max-w-2xl flex-col items-center px-4 text-center">
-        <Logo variant="full" className="belen-logo-invert h-36 w-auto sm:h-44" />
+        <Logo variant="full" className="belen-logo-invert belen-fade-up h-36 w-auto sm:h-44" />
 
         {showTagline && (
           <p className="mt-2 text-xs font-semibold uppercase tracking-[0.25em] text-belen-orange-light">
@@ -380,7 +395,9 @@ function Footer() {
 
 function CardShell({ children, className = '' }) {
   return (
-    <div className={`rounded-2xl bg-white p-5 shadow-card sm:p-8 ${className}`}>{children}</div>
+    <div className={`belen-fade-up rounded-2xl bg-white p-5 shadow-card sm:p-8 ${className}`}>
+      {children}
+    </div>
   )
 }
 
@@ -612,6 +629,12 @@ export default function PublicForm() {
 
   const fieldRefs = useRef({})
   const previousSelection = useRef({ agentId: '', day: '' })
+
+  // Al confirmar la reserva: confeti con los colores de la marca. La propia función
+  // respeta «prefers-reduced-motion», así que no molesta a quien pidió menos animación.
+  useEffect(() => {
+    if (success) celebrateReservation()
+  }, [success])
 
   const registerField = useCallback(
     (name) => (element) => {
@@ -1151,7 +1174,12 @@ export default function PublicForm() {
               loading={submitting}
               disabled={scheduleUnavailable}
               icon={Ticket}
-              className="w-full !bg-belen-orange shadow-card hover:!bg-belen-orange-dark active:!bg-belen-orange-dark"
+              className={[
+                'relative w-full overflow-hidden !bg-belen-orange shadow-card transition-transform',
+                'hover:!bg-belen-orange-dark hover:scale-[1.02] active:!bg-belen-orange-dark active:scale-[0.99]',
+                // El brillo solo barre mientras el botón está listo para pulsarse.
+                !submitting && !scheduleUnavailable ? 'belen-sweep' : '',
+              ].join(' ')}
             >
               {submitting ? 'Enviando tu solicitud…' : 'Reservar mi lugar'}
             </Button>

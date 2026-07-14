@@ -13,6 +13,28 @@ export const COL = {
 export const CONFIG_DOC = 'general'
 export const TICKET_COUNTER_DOC = 'tickets'
 
+// --- Roles de los usuarios del panel ---
+// El documento admins/{uid} representa a CUALQUIER usuario del panel; su campo `role` decide qué
+// puede hacer. Un doc sin `role` se trata como 'superadmin' (compatibilidad con el admin original).
+export const ROLE = {
+  SUPERADMIN: 'superadmin', // el administrador general: acceso total, crea usuarios
+  AGENTE: 'agente', // agente de ventas: gestiona SUS solicitudes + escáner + asistencia
+  SEGURIDAD: 'seguridad', // control de acceso: solo escáner + ver invitaciones/asistencia
+}
+
+export const ROLE_LABEL = {
+  superadmin: 'Administrador',
+  agente: 'Agente',
+  seguridad: 'Seguridad',
+}
+
+// A dónde cae cada rol al entrar (su pantalla principal).
+export const ROLE_HOME = {
+  superadmin: '/admin',
+  agente: '/admin/reservations',
+  seguridad: '/admin/scanner',
+}
+
 // --- Estados de la reserva ---
 export const RESERVATION_STATUS = {
   PENDING: 'pending',
