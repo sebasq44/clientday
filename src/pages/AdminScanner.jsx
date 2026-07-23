@@ -18,7 +18,7 @@ import {
 import { useAuth } from '../hooks/useAuth'
 import { useAgents } from '../hooks/useAgents'
 import { useConfig } from '../hooks/useConfig'
-import { processScan, subscribeScans } from '../services/scanService'
+import { peekScanAction, processScan, subscribeScans } from '../services/scanService'
 import { subscribeTickets } from '../services/ticketsService'
 import {
   HOLDER_TYPE_LABEL,
@@ -26,7 +26,13 @@ import {
   TICKET_STATUS,
   formatSerial,
 } from '../lib/constants'
-import { dayLabel, formatHourRange, formatTime } from '../lib/format'
+import {
+  dayLabel,
+  formatHourRange,
+  formatISODate,
+  formatTime,
+  todayISODate,
+} from '../lib/format'
 import {
   beep,
   getAudioContext,
@@ -103,6 +109,8 @@ export default function AdminScanner() {
 
   const [result, setResult] = useState(null)
   const [processing, setProcessing] = useState(false)
+  // Salida pendiente de confirmar: { token, ticket }. Se registra solo si el guarda confirma.
+  const [pendingCheckout, setPendingCheckout] = useState(null)
 
   const [tickets, setTickets] = useState([])
   const [ticketsLoading, setTicketsLoading] = useState(true)
@@ -198,29 +206,35 @@ export default function AdminScanner() {
     }
   }, [stopScanner])
 
-  /* --- Resolución de un token: pausa, transacción y pantalla de resultado --- */
-  const handleToken = useCallback(
-    async (rawToken) => {
-      const token = String(rawToken ?? '').trim()
-      if (!token || busyRef.current) return null
+  /** Pausa el vídeo (sin apagar la cámara) para no disparar el mismo QR decenas de veces. */
+  const pauseScanner = useCallback(() => {
+    const scanner = scannerRef.current
+    if (!scanner) return
+    try {
+      if (scanner.getState() === Html5QrcodeScannerState.SCANNING) scanner.pause(true)
+    } catch (error) {
+      console.warn('[AdminScanner] No se pudo pausar el lector:', error?.message || error)
+    }
+  }, [])
 
-      busyRef.current = true
+  /** Reanuda el vídeo pausado. */
+  const resumeScanner = useCallback(() => {
+    const scanner = scannerRef.current
+    if (!scanner) return
+    try {
+      if (scanner.getState() === Html5QrcodeScannerState.PAUSED) scanner.resume()
+    } catch (error) {
+      console.warn('[AdminScanner] No se pudo reanudar el lector:', error?.message || error)
+    }
+  }, [])
+
+  /** Registra de verdad el escaneo (transacción) y pinta la pantalla de resultado. */
+  const runScan = useCallback(
+    async (token) => {
       setProcessing(true)
-
-      // Pausar ANTES de la transacción: si no, la cámara dispara el mismo QR decenas de veces.
-      const scanner = scannerRef.current
-      if (scanner) {
-        try {
-          if (scanner.getState() === Html5QrcodeScannerState.SCANNING) scanner.pause(true)
-        } catch (error) {
-          console.warn('[AdminScanner] No se pudo pausar el lector:', error?.message || error)
-        }
-      }
-
       try {
         const outcome = await processScan(token, user?.uid)
         if (!aliveRef.current) return outcome
-
         vibrate(outcome.ok)
         beep(outcome.ok)
         setResult(outcome)
@@ -236,12 +250,55 @@ export default function AdminScanner() {
         }
         return null
       } finally {
-        busyRef.current = false
         if (aliveRef.current) setProcessing(false)
       }
     },
     [user?.uid],
   )
+
+  /* --- Resolución de un token ---
+   * Antes de registrar, hacemos una lectura previa (peek): si el escaneo fuese una SALIDA, no la
+   * registramos de una vez, sino que pedimos confirmación (evita marcar salidas por descuido).
+   * Para entrada, rechazo o si el peek falla, se registra directo como antes. */
+  const handleToken = useCallback(
+    async (rawToken) => {
+      const token = String(rawToken ?? '').trim()
+      if (!token || busyRef.current) return null
+
+      busyRef.current = true
+      pauseScanner()
+
+      try {
+        const preview = await peekScanAction(token)
+        if (!aliveRef.current) return null
+
+        if (preview.wouldBe === 'check_out' && preview.ticket) {
+          // Salida: mostramos la confirmación y esperamos al guarda (la cámara sigue en pausa).
+          setPendingCheckout({ token, ticket: preview.ticket })
+          return null
+        }
+
+        return await runScan(token)
+      } finally {
+        busyRef.current = false
+      }
+    },
+    [pauseScanner, runScan],
+  )
+
+  /** El guarda confirmó la salida: ahora sí la registramos. */
+  const confirmCheckout = useCallback(async () => {
+    const pending = pendingCheckout
+    if (!pending) return
+    setPendingCheckout(null)
+    await runScan(pending.token)
+  }, [pendingCheckout, runScan])
+
+  /** El guarda canceló la salida: descartamos y volvemos a escanear. */
+  const cancelCheckout = useCallback(() => {
+    setPendingCheckout(null)
+    resumeScanner()
+  }, [resumeScanner])
 
   /* --- Cámara --- */
   const startCamera = useCallback(async () => {
@@ -336,9 +393,9 @@ export default function AdminScanner() {
 
       setSerialError('')
       setSerialBusy(true)
+      setSerialInput('')
       try {
-        const outcome = await handleToken(ticket.qrToken)
-        if (outcome) setSerialInput('')
+        await handleToken(ticket.qrToken)
       } finally {
         if (aliveRef.current) setSerialBusy(false)
       }
@@ -357,6 +414,15 @@ export default function AdminScanner() {
           agent={resultAgent}
           onNext={scanNext}
           onClose={stopCamera}
+        />
+      )}
+
+      {pendingCheckout && !result && (
+        <CheckoutConfirmScreen
+          ticket={pendingCheckout.ticket}
+          processing={processing}
+          onConfirm={confirmCheckout}
+          onCancel={cancelCheckout}
         />
       )}
 
@@ -569,6 +635,81 @@ function CounterTile({ label, value, loading, className }) {
 }
 
 /**
+ * Confirmación de SALIDA a página completa. Registrar una salida es prácticamente irreversible
+ * (inutiliza el QR), así que antes de hacerlo pedimos al guarda que confirme.
+ */
+function CheckoutConfirmScreen({ ticket, processing, onConfirm, onCancel }) {
+  const holderType = ticket?.holderType ? HOLDER_TYPE_LABEL[ticket.holderType] : null
+
+  return (
+    <div
+      role="alertdialog"
+      aria-live="assertive"
+      aria-label="Confirmar salida"
+      className="fixed inset-0 z-[60] flex flex-col overflow-y-auto bg-belen-blue text-white"
+    >
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-5 py-8 sm:px-6 lg:max-w-xl">
+        <div className="flex flex-col items-center text-center">
+          <LogOut className="h-24 w-24 sm:h-28 sm:w-28" strokeWidth={2.25} aria-hidden="true" />
+          <p className="mt-3 text-sm font-bold uppercase tracking-[0.2em] text-white/70">
+            ¿Registrar salida?
+          </p>
+          {ticket?.holderName && (
+            <h2 className="mt-2 font-display text-3xl font-extrabold uppercase leading-tight sm:text-4xl">
+              {ticket.holderName}
+            </h2>
+          )}
+          {holderType && (
+            <span className="mt-2 rounded-full bg-white/20 px-3 py-1 text-sm font-bold uppercase tracking-wide">
+              {holderType}
+            </span>
+          )}
+        </div>
+
+        <dl className="mt-5 space-y-px overflow-hidden rounded-2xl bg-white/10 text-sm">
+          <ResultRow label="Empresa" value={ticket?.companyName} />
+          <ResultRow label="Código de cliente" value={ticket?.clientCode} />
+          <ResultRow label="Serial" value={ticket?.serial} mono />
+          <ResultRow label="Hora de ingreso" value={formatTime(ticket?.checkInAt)} />
+        </dl>
+
+        <p className="mt-4 text-center text-sm font-medium text-white/80">
+          Después de registrar la salida, este QR ya no podrá volver a usarse.
+        </p>
+
+        <div className="mt-6 space-y-3">
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={processing}
+            autoFocus
+            className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-white text-base font-extrabold uppercase tracking-wide text-belen-blue shadow-card transition-transform active:scale-[0.98] disabled:opacity-70"
+          >
+            {processing ? (
+              <Spinner size="sm" />
+            ) : (
+              <>
+                <LogOut className="h-5 w-5" aria-hidden="true" />
+                Sí, registrar salida
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={processing}
+            className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white/15 text-sm font-semibold text-white transition-colors hover:bg-white/25 disabled:opacity-70"
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            Cancelar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
  * Pantalla de resultado a página completa. Se lee de un vistazo desde lejos y en la calle:
  * verde = pasa, azul = salió, rojo = no pasa.
  */
@@ -581,6 +722,9 @@ function ScanResultScreen({ result, config, agent, onNext, onClose }) {
   // Solo al registrar la ENTRADA se le avisa al agente que su cliente ya llegó.
   const whatsappUrl =
     isCheckIn && ticket ? buildWhatsappNoticeUrl({ agent, ticket, config }) : null
+
+  // Alerta (no bloqueo): la invitación es para un día distinto al de hoy. Solo aplica al ENTRAR.
+  const wrongDay = isCheckIn && ticket?.day && ticket.day !== todayISODate()
 
   const theme = isCheckIn
     ? { bg: 'bg-emerald-600', Icon: CheckCircle2, title: 'ENTRADA' }
@@ -617,6 +761,21 @@ function ScanResultScreen({ result, config, agent, onNext, onClose }) {
             </span>
           )}
         </div>
+
+        {/* ALERTA (no bloqueo): la invitación es para otro día. La entrada YA quedó registrada,
+            pero avisamos fuerte para que el guarda decida qué hacer. */}
+        {wrongDay && (
+          <div className="mt-5 flex items-start gap-3 rounded-2xl bg-amber-400 px-4 py-3 text-left text-amber-950 shadow-lg ring-2 ring-amber-200">
+            <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-extrabold uppercase tracking-wide">Atención: otro día</p>
+              <p className="text-sm font-semibold leading-snug">
+                Esta invitación es para el <strong>{dayLabel(config, ticket.day)}</strong>, pero hoy
+                es <strong>{formatISODate(todayISODate())}</strong>.
+              </p>
+            </div>
+          </div>
+        )}
 
         {!ok && message && (
           <p className="mt-5 rounded-2xl bg-white/15 px-4 py-3 text-center text-base font-semibold leading-snug">

@@ -302,6 +302,38 @@ async function resolveScanFromDb(token, scannedBy) {
   }
 }
 
+/**
+ * Vista PREVIA de un escaneo de entrada/salida: lee el ticket SIN escribir nada, para saber qué
+ * pasaría. Sirve para pedir confirmación antes de registrar una SALIDA (que es irreversible en la
+ * práctica). NO reemplaza a processScan: la decisión y el registro reales se hacen ahí, dentro de
+ * la transacción. Si esta lectura falla, devolvemos wouldBe:'unknown' para no bloquear la puerta.
+ *
+ * @returns {Promise<{ wouldBe:'check_in'|'check_out'|'rejected'|'unknown', ticket: object|null }>}
+ */
+export async function peekScanAction(qrToken) {
+  const token = normalizeToken(qrToken)
+  if (!token) return { wouldBe: 'rejected', ticket: null }
+
+  try {
+    const snap = await withTimeout(
+      getDocs(query(collection(db, COL.TICKETS), where('qrToken', '==', token), limit(1))),
+      SCAN_TIMEOUT_MS,
+    )
+    if (snap.__timedOut) return { wouldBe: 'unknown', ticket: null }
+    if (snap.empty) return { wouldBe: 'rejected', ticket: null }
+
+    const d = snap.docs[0]
+    const ticket = mapTicket(d.id, d.data())
+
+    if (ticket.status === TICKET_STATUS.VALID) return { wouldBe: 'check_in', ticket }
+    if (ticket.status === TICKET_STATUS.INSIDE) return { wouldBe: 'check_out', ticket }
+    return { wouldBe: 'rejected', ticket }
+  } catch (error) {
+    console.error('[scanService] peekScanAction', error)
+    return { wouldBe: 'unknown', ticket: null }
+  }
+}
+
 /* ================================================================================================
  * COMIDA — el mismo QR de la invitación sirve para retirar el plato, UNA sola vez.
  *

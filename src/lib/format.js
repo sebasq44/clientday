@@ -50,6 +50,24 @@ export function dayLetter(config, dayId) {
   return day?.letter ?? ''
 }
 
+/** Fecha de HOY en formato AAAA-MM-DD según la hora LOCAL del dispositivo (no UTC). */
+export function todayISODate() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+/** 'AAAA-MM-DD' -> 'lunes, 8 de septiembre'. Devuelve el original si no tiene ese formato. */
+export function formatISODate(iso) {
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || '—'
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString('es-CR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+  })
+}
+
 /** Valida un correo con una expresión razonable (no exhaustiva, pero suficiente). */
 export function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(email || '').trim())

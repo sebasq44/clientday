@@ -162,6 +162,16 @@ solo si la persona está DENTRO del evento y no lo ha retirado ya:
 
 El canje de comida **no altera** `status`: entrada/salida y comida son ejes independientes.
 
+**Salvaguardas del escáner de Entrada/Salida (solo UI, no bloquean):**
+- **Confirmar salida**: antes de registrar una salida (`inside → exited`, prácticamente irreversible)
+  se hace una lectura previa (`peekScanAction`) y se pide confirmación. La entrada y el rechazo se
+  registran directo. Si la lectura previa falla, se registra sin confirmar (no se bloquea la puerta).
+- **Alerta de día equivocado**: al registrar la ENTRADA, si `ticket.day !== hoy` (fecha local del
+  dispositivo), se muestra un aviso ámbar. **No bloquea**: la entrada queda registrada igual.
+
+**Premio (`prizeAt`)**: se puede marcar a quien está `inside` **o** `exited` (asistió), para permitir
+registrarlo después del evento. Un premio ya marcado se puede desmarcar (corrección de errores).
+
 ### `counters/tickets` — correlativo del serial
 
 ```js

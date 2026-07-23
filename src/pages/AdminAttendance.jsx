@@ -599,7 +599,11 @@ export default function AdminAttendance() {
  */
 function PrizeControl({ ticket, canAwardPrize, saving, onPrize }) {
   const awarded = Boolean(ticket.prizeAt)
-  const interactive = canAwardPrize && (awarded || ticket.status === TICKET_STATUS.INSIDE)
+  // Se puede premiar a quien asistió: está DENTRO ('inside') o YA SALIÓ ('exited'). Esto último
+  // permite que un administrador registre un premio después del evento, si en el momento no se pudo.
+  // Si ya lo tiene, sigue siendo accionable en cualquier estado para poder deshacer un error.
+  const attended = ticket.status === TICKET_STATUS.INSIDE || ticket.status === TICKET_STATUS.EXITED
+  const interactive = canAwardPrize && (awarded || attended)
 
   const look = awarded ? PRIZE_AWARDED : PRIZE_EMPTY
   const stateLabel = awarded
