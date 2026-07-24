@@ -127,7 +127,7 @@
                     </tr>
                     <tr>
                       <td style="padding:5px 0; color:#5b6478; font-size:13px; font-weight:600;">
-                        Agente de ventas
+                        Asesor comercial
                       </td>
                       <td style="padding:5px 0; color:#101828; font-size:13px; font-weight:700;">
                         <?= reservation.agentName ?>
@@ -190,8 +190,14 @@
                     Masterclass incluida
                   </div>
                   <div style="color:#101828; font-size:13px; line-height:1.55;">
-                    Confirmaste tu asistencia a la <strong>Masterclass</strong>. Te recomendamos
-                    llegar con 15 minutos de antelación para tomar tu asiento. El cupo es limitado.
+                    Confirmaste tu asistencia a
+                    <? if (reservation.masterclassName) { ?>
+                    la Masterclass <strong><?= reservation.masterclassName ?></strong>.
+                    <? } else { ?>
+                    la <strong>Masterclass</strong>.
+                    <? } ?>
+                    Te recomendamos llegar con 15 minutos de antelación para tomar tu asiento. El
+                    cupo es limitado.
                   </div>
                 </td>
               </tr>

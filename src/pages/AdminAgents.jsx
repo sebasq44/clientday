@@ -249,9 +249,9 @@ export default function AdminAgents() {
 
   const validate = () => {
     const next = {}
-    if (!clean(form.name)) next.name = 'El nombre del agente es obligatorio.'
+    if (!clean(form.name)) next.name = 'El nombre del asesor es obligatorio.'
     if (clean(form.email) && !isValidEmail(form.email)) {
-      next.email = 'Escribe un correo válido, por ejemplo agente@empaquesbelen.com.'
+      next.email = 'Escribe un correo válido, por ejemplo asesor@empaquesbelen.com.'
     }
     // El WhatsApp es opcional, pero si lo escriben tiene que ser un número tico completo.
     const wa = onlyDigits(form.whatsapp)
@@ -285,7 +285,7 @@ export default function AdminAgents() {
         toast.success(`Se guardaron los cambios de ${payload.name}.`)
       } else {
         await createAgent(payload)
-        toast.success(`${payload.name} se agregó a la lista de agentes.`)
+        toast.success(`${payload.name} se agregó a la lista de asesores.`)
       }
 
       setFormOpen(false)
@@ -336,7 +336,7 @@ export default function AdminAgents() {
     setDeleteError('')
     try {
       await deleteAgent(deleteTarget.id)
-      toast.success(`${deleteTarget.name} se eliminó de la lista de agentes.`)
+      toast.success(`${deleteTarget.name} se eliminó de la lista de asesores.`)
       setDeleteTarget(null)
     } catch (err) {
       // El caso típico: el agente tiene reservas aprobadas y no se puede borrar.
@@ -381,7 +381,7 @@ export default function AdminAgents() {
   const validateAccess = () => {
     const next = {}
     if (!isValidEmail(accessForm.email)) {
-      next.email = 'Escribe un correo válido, por ejemplo agente@empaquesbelen.com.'
+      next.email = 'Escribe un correo válido, por ejemplo asesor@empaquesbelen.com.'
     }
     if (!accessForm.password || accessForm.password.length < 6) {
       next.password = 'La contraseña debe tener al menos 6 caracteres.'
@@ -448,15 +448,15 @@ export default function AdminAgents() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="font-display text-xl font-extrabold uppercase tracking-wide text-belen-blue sm:text-2xl">
-            Agentes de ventas
+            Asesores comerciales
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Solo los agentes activos aparecen en el formulario público de reservas.
+            Solo los asesores activos aparecen en el formulario público de reservas.
           </p>
         </div>
 
         <Button icon={Plus} onClick={openCreate} className="w-full sm:w-auto">
-          Agregar agente
+          Agregar asesor
         </Button>
       </header>
 
@@ -464,10 +464,10 @@ export default function AdminAgents() {
         title="Equipo comercial"
         subtitle={
           loading
-            ? 'Cargando agentes…'
+            ? 'Cargando asesores…'
             : error
-              ? 'No se pudieron cargar los agentes.'
-              : `${agents.length} ${agents.length === 1 ? 'agente' : 'agentes'} · ${activeCount} ${
+              ? 'No se pudieron cargar los asesores.'
+              : `${agents.length} ${agents.length === 1 ? 'asesor' : 'asesores'} · ${activeCount} ${
                   activeCount === 1 ? 'activo' : 'activos'
                 }`
         }
@@ -475,12 +475,12 @@ export default function AdminAgents() {
         {loading ? (
           <div className="flex flex-col items-center justify-center gap-3 py-12 text-belen-blue">
             <Spinner size="lg" />
-            <p className="text-sm font-medium text-slate-500">Cargando agentes…</p>
+            <p className="text-sm font-medium text-slate-500">Cargando asesores…</p>
           </div>
         ) : error ? (
           <EmptyState
             icon={TriangleAlert}
-            title="No pudimos cargar los agentes"
+            title="No pudimos cargar los asesores"
             description={error}
             action={
               <Button icon={RefreshCw} onClick={() => window.location.reload()}>
@@ -491,11 +491,11 @@ export default function AdminAgents() {
         ) : agents.length === 0 ? (
           <EmptyState
             icon={Users}
-            title="Todavía no hay agentes"
-            description="Agrega al primer agente de ventas para que los clientes puedan elegirlo al reservar su cita."
+            title="Todavía no hay asesores"
+            description="Agrega al primer asesor comercial para que los clientes puedan elegirlo al reservar su cita."
             action={
               <Button icon={Plus} onClick={openCreate}>
-                Agregar agente
+                Agregar asesor
               </Button>
             }
           />
@@ -631,7 +631,7 @@ export default function AdminAgents() {
         open={formOpen}
         onClose={closeForm}
         size="lg"
-        title={editingAgent ? 'Editar agente' : 'Agregar agente'}
+        title={editingAgent ? 'Editar asesor' : 'Agregar asesor'}
         footer={
           <>
             <Button
@@ -649,7 +649,7 @@ export default function AdminAgents() {
               disabled={compressing}
               className="w-full sm:w-auto"
             >
-              {editingAgent ? 'Guardar cambios' : 'Agregar agente'}
+              {editingAgent ? 'Guardar cambios' : 'Agregar asesor'}
             </Button>
           </>
         }
@@ -672,7 +672,7 @@ export default function AdminAgents() {
             onChange={(event) => setForm({ ...form, email: event.target.value })}
             error={errors.email}
             hint="Opcional. Solo es informativo: las entradas se envían al correo del cliente."
-            placeholder="agente@empaquesbelen.com"
+            placeholder="asesor@empaquesbelen.com"
             autoComplete="off"
           />
 
@@ -728,7 +728,7 @@ export default function AdminAgents() {
                 {form.photoBase64 ? (
                   <img
                     src={form.photoBase64}
-                    alt="Vista previa de la foto del agente"
+                    alt="Vista previa de la foto del asesor"
                     className="h-24 w-24 rounded-full object-cover ring-2 ring-belen-orange/40"
                   />
                 ) : (
@@ -857,14 +857,14 @@ export default function AdminAgents() {
             <Toggle
               checked={form.active}
               onChange={(next) => setForm({ ...form, active: next })}
-              label="Agente activo"
+              label="Asesor activo"
             />
             <div className="min-w-0">
               <p className="text-sm font-semibold text-belen-ink">
                 {form.active ? 'Activo' : 'Inactivo'}
               </p>
               <p className="text-xs text-slate-500">
-                Los agentes inactivos no aparecen en el formulario público de reservas.
+                Los asesores inactivos no aparecen en el formulario público de reservas.
               </p>
             </div>
           </div>
@@ -876,7 +876,7 @@ export default function AdminAgents() {
         open={Boolean(deleteTarget)}
         onClose={closeDelete}
         size="sm"
-        title="Eliminar agente"
+        title="Eliminar asesor"
         footer={
           <>
             <Button variant="ghost" onClick={closeDelete} disabled={deleting || deactivating}>
@@ -931,7 +931,7 @@ export default function AdminAgents() {
             ) : (
               <p className="text-sm leading-relaxed text-slate-600">
                 ¿Seguro que quieres eliminar a <strong>{deleteTarget.name}</strong>? Esta acción no se
-                puede deshacer. Si el agente ya tiene citas aprobadas, deberás desactivarlo en lugar
+                puede deshacer. Si el asesor ya tiene citas aprobadas, deberás desactivarlo en lugar
                 de eliminarlo.
               </p>
             )}
@@ -994,7 +994,7 @@ export default function AdminAgents() {
               value={accessForm.email}
               onChange={(event) => setAccessForm({ ...accessForm, email: event.target.value })}
               error={accessErrors.email}
-              placeholder="agente@empaquesbelen.com"
+              placeholder="asesor@empaquesbelen.com"
               autoComplete="off"
             />
 
@@ -1005,7 +1005,7 @@ export default function AdminAgents() {
               value={accessForm.password}
               onChange={(event) => setAccessForm({ ...accessForm, password: event.target.value })}
               error={accessErrors.password}
-              hint="Mínimo 6 caracteres. Entrégasela al agente; podrá cambiarla más adelante."
+              hint="Mínimo 6 caracteres. Entrégasela al asesor; podrá cambiarla más adelante."
               placeholder="Mínimo 6 caracteres"
               autoComplete="new-password"
             />

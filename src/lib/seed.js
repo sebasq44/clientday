@@ -10,11 +10,21 @@ export const DEFAULT_CONFIG = {
   formOpen: true,
   allowCompanion: true,
   masterclassEnabled: true,
+  // Lista de masterclasses que el cliente elige en el formulario si asiste. Es informativa
+  // (aparece en el boleto y el correo); no impone bloqueos. La administra el superadmin en Ajustes.
+  masterclasses: [
+    { id: 'mc-1', name: 'Empaque sostenible', startTime: '10:00', endTime: '11:00' },
+    { id: 'mc-2', name: 'Tendencias de mercado', startTime: '12:00', endTime: '13:00' },
+  ],
   days: [
     { id: '2026-09-08', label: '8 Septiembre', letter: 'M', enabled: true },
     { id: '2026-09-09', label: '9 Septiembre', letter: 'K', enabled: true },
   ],
-  hours: ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00'],
+  // Cada cita dura 30 minutos: las horas van en pasos de media hora (9:00 a. m. – 4:00 p. m.).
+  hours: [
+    '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '12:30',
+    '13:00', '13:30', '14:00', '14:30', '15:00', '15:30',
+  ],
   ticketPrefix: 'GEN',
 }
 

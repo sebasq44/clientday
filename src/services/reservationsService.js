@@ -81,6 +81,8 @@ export async function createReservation(data) {
     day: clean(data?.day),
     hour: clean(data?.hour),
     masterclass: Boolean(data?.masterclass),
+    masterclassId: clean(data?.masterclassId),
+    masterclassName: '', // se desnormaliza abajo desde config.masterclasses
   }
 
   try {
@@ -90,7 +92,7 @@ export async function createReservation(data) {
     if (!payload.companyName) fail('Escribe el nombre de tu empresa.')
     if (!payload.email) fail('Escribe tu correo electrónico.')
     if (!isValidEmail(payload.email)) fail('El correo electrónico no es válido.')
-    if (!payload.agentId) fail('Selecciona el agente de ventas que te acompañará.')
+    if (!payload.agentId) fail('Selecciona el asesor comercial que te acompañará.')
     if (!payload.day) fail('Selecciona el día de tu cita.')
     if (!payload.hour) fail('Selecciona la hora de tu cita.')
 
@@ -131,10 +133,22 @@ export async function createReservation(data) {
     }
     if (!payload.hasCompanion) payload.companionName = ''
 
-    // --- El agente debe existir y estar activo ---
-    if (!agentSnap.exists()) fail('El agente de ventas seleccionado ya no existe.')
+    // --- Masterclass: si asiste y hay lista configurada, debe elegir a cuál. Es informativo. ---
+    const masterclasses = Array.isArray(config.masterclasses) ? config.masterclasses : []
+    if (payload.masterclass && masterclasses.length > 0) {
+      const chosen = masterclasses.find((m) => m.id === payload.masterclassId)
+      if (!chosen) fail('Selecciona a cuál masterclass asistirás.')
+      payload.masterclassName = clean(chosen.name)
+    } else {
+      // No asiste, o no hay lista: no se guarda ninguna masterclass.
+      payload.masterclassId = ''
+      payload.masterclassName = ''
+    }
+
+    // --- El asesor debe existir y estar activo ---
+    if (!agentSnap.exists()) fail('El asesor comercial seleccionado ya no existe.')
     const agent = agentSnap.data()
-    if (agent.active === false) fail('El agente de ventas seleccionado ya no está disponible.')
+    if (agent.active === false) fail('El asesor comercial seleccionado ya no está disponible.')
     payload.agentName = clean(agent.name)
 
     // --- Comprobación previa de disponibilidad (la autoridad real es la transacción al aprobar) ---
@@ -274,6 +288,7 @@ export async function approveReservation(reservationId, adminUid) {
         day: reservation.day ?? '',
         hour: reservation.hour ?? '',
         masterclass: Boolean(reservation.masterclass),
+        masterclassName: reservation.masterclassName ?? '', // para mostrarla en boleto y correo
         status: TICKET_STATUS.VALID,
         checkInAt: null,
         checkOutAt: null,

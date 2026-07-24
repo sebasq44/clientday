@@ -24,7 +24,7 @@ export const ROLE = {
 
 export const ROLE_LABEL = {
   superadmin: 'Administrador',
-  agente: 'Agente',
+  agente: 'Asesor comercial', // el valor interno del rol sigue siendo 'agente'; solo cambia la etiqueta
   seguridad: 'Seguridad',
 }
 
@@ -134,7 +134,7 @@ export const STATUS_STYLES = {
 // Errores de negocio con mensaje ya listo para mostrar al usuario.
 export const ERRORS = {
   SLOT_TAKEN:
-    'Ese agente ya tiene una cita confirmada en ese día y hora. Elige otro horario u otro agente.',
+    'Ese asesor ya tiene una cita confirmada en ese día y hora. Elige otro horario u otro asesor.',
   ALREADY_REVIEWED: 'Esta solicitud ya fue revisada por otro administrador. Actualiza la página.',
   MEAL_ALREADY_TAKEN: 'Esta entrada ya retiró su comida. No puede retirar otra.',
   MEAL_NOT_INSIDE:

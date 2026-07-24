@@ -49,7 +49,8 @@ import {
   RESERVATION_STATUS,
   RESERVATION_STATUS_LABEL,
 } from '../lib/constants'
-import { csvCell, dayLabel, formatDateTime, formatHourRange } from '../lib/format'
+import { dayLabel, formatDateTime, formatHourRange } from '../lib/format'
+import { exportToXlsx } from '../lib/exportXlsx'
 
 /* ------------------------------------------------------------------ */
 /* Utilidades locales                                                   */
@@ -260,7 +261,7 @@ export default function AdminReservations() {
     // Un agente borrado puede seguir apareciendo en reservas antiguas: no lo perdemos del filtro.
     reservations.forEach((reservation) => {
       if (reservation.agentId && !map.has(reservation.agentId)) {
-        map.set(reservation.agentId, reservation.agentName || 'Agente eliminado')
+        map.set(reservation.agentId, reservation.agentName || 'Asesor eliminado')
       }
     })
     return [...map.entries()]
@@ -480,65 +481,60 @@ export default function AdminReservations() {
     }
   }
 
-  const handleExportCsv = () => {
+  const handleExportExcel = () => {
     if (filtered.length === 0) {
       toast.info('No hay reservas que exportar con los filtros actuales.')
       return
     }
 
+    // Encabezados legibles en español; también fijan el orden de las columnas del .xlsx.
     const headers = [
-      'Código cliente',
+      'Código',
       'Nombre',
       'Empresa',
       'Correo',
       'Teléfono',
-      'Agente',
+      'Asesor',
       'Día',
       'Hora',
       'Acompañante',
-      'Nombre acompañante',
       'Masterclass',
       'Estado',
-      'Correo enviado',
-      'Motivo de rechazo',
-      'Entradas',
-      'Solicitada',
+      'Estado del correo',
+      'Fecha de creación',
     ]
 
-    const lines = filtered.map((reservation) =>
-      [
-        reservation.clientCode,
-        reservation.fullName,
-        reservation.companyName,
-        reservation.email,
-        reservation.phone,
-        reservation.agentName,
-        dayLabel(config, reservation.day),
-        formatHourRange(reservation.hour),
-        reservation.hasCompanion ? 'Sí' : 'No',
-        reservation.hasCompanion ? reservation.companionName : '',
-        reservation.masterclass ? 'Sí' : 'No',
-        RESERVATION_STATUS_LABEL[reservation.status] || reservation.status,
+    // Una fila (objeto plano) por reserva FILTRADA: respeta la búsqueda y los filtros activos.
+    const rows = filtered.map((reservation) => ({
+      Código: reservation.clientCode,
+      Nombre: reservation.fullName,
+      Empresa: reservation.companyName,
+      Correo: reservation.email,
+      Teléfono: reservation.phone,
+      Asesor: reservation.agentName,
+      Día: dayLabel(config, reservation.day),
+      Hora: formatHourRange(reservation.hour),
+      Acompañante: reservation.hasCompanion
+        ? reservation.companionName
+          ? `Sí (${reservation.companionName})`
+          : 'Sí'
+        : 'No',
+      Masterclass: reservation.masterclassName
+        ? reservation.masterclassName
+        : reservation.masterclass
+          ? 'Sí'
+          : 'No',
+      Estado: RESERVATION_STATUS_LABEL[reservation.status] || reservation.status,
+      'Estado del correo':
         EMAIL_STATUS_LABEL[reservation.emailStatus] || EMAIL_STATUS_LABEL.not_sent,
-        reservation.rejectionReason || '',
-        (reservation.ticketIds || []).length,
-        formatDateTime(reservation.createdAt),
-      ]
-        .map(csvCell)
-        .join(','),
-    )
+      'Fecha de creación': formatDateTime(reservation.createdAt),
+    }))
 
-    // El BOM (\ufeff) hace que Excel abra el archivo en UTF-8 y respete las tildes.
-    const csv = `\ufeff${[headers.map(csvCell).join(','), ...lines].join('\r\n')}\r\n`
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `reservas-dia-del-cliente-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    exportToXlsx(rows, {
+      fileName: 'reservas-dia-del-cliente.xlsx',
+      sheetName: 'Reservas',
+      headers,
+    })
 
     toast.success(
       `Se exportaron ${filtered.length} ${filtered.length === 1 ? 'reserva' : 'reservas'}.`,
@@ -728,11 +724,11 @@ export default function AdminReservations() {
             {/* El agente solo ve sus propias reservas: filtrar por agente no tiene sentido para él. */}
             {!isAgente && (
               <Select
-                label="Agente"
+                label="Asesor"
                 value={agentFilter}
                 onChange={(event) => setAgentFilter(event.target.value)}
               >
-                <option value={ALL}>Todos los agentes</option>
+                <option value={ALL}>Todos los asesores</option>
                 {agentOptions.map((agent) => (
                   <option key={agent.id} value={agent.id}>
                     {agent.name}
@@ -782,10 +778,10 @@ export default function AdminReservations() {
                 size="sm"
                 variant="secondary"
                 icon={Download}
-                onClick={handleExportCsv}
+                onClick={handleExportExcel}
                 disabled={isLoading}
               >
-                Exportar CSV
+                Exportar a Excel
               </Button>
             </div>
           </div>
@@ -848,7 +844,7 @@ export default function AdminReservations() {
                 <thead>
                   <tr className="border-b border-belen-blue/10 text-[11px] uppercase tracking-wider text-belen-blue/60">
                     <th className="px-3 py-2 font-extrabold">Cliente</th>
-                    <th className="px-3 py-2 font-extrabold">Agente</th>
+                    <th className="px-3 py-2 font-extrabold">Asesor</th>
                     <th className="px-3 py-2 font-extrabold">Día y hora</th>
                     <th className="px-3 py-2 font-extrabold">Acomp.</th>
                     <th className="px-3 py-2 font-extrabold">Master</th>
@@ -967,8 +963,13 @@ export default function AdminReservations() {
                         <dt className="text-[11px] uppercase tracking-wide text-belen-blue/50">
                           Masterclass
                         </dt>
-                        <dd className="mt-1">
+                        <dd className="mt-1 flex min-w-0 items-center gap-2">
                           <MasterclassCell reservation={reservation} />
+                          {reservation.masterclassName && (
+                            <span className="min-w-0 truncate text-xs text-slate-500">
+                              {reservation.masterclassName}
+                            </span>
+                          )}
                         </dd>
                       </div>
                     </dl>
@@ -1015,7 +1016,7 @@ export default function AdminReservations() {
         {approveTarget && (
           <div className="space-y-4">
             <p className="text-sm leading-relaxed text-slate-600">
-              Se bloqueará el horario del agente, se emitirán las entradas con su código QR y se
+              Se bloqueará el horario del asesor, se emitirán las entradas con su código QR y se
               enviarán al correo del cliente.
             </p>
 
@@ -1026,7 +1027,7 @@ export default function AdminReservations() {
                 value={`${approveTarget.companyName} · ${approveTarget.clientCode}`}
               />
               <SummaryRow label="Correo" value={approveTarget.email} />
-              <SummaryRow label="Agente" value={approveTarget.agentName} />
+              <SummaryRow label="Asesor" value={approveTarget.agentName} />
               <SummaryRow
                 label="Cita"
                 value={`${dayLabel(config, approveTarget.day)} · ${formatHourRange(
@@ -1043,7 +1044,13 @@ export default function AdminReservations() {
               />
               <SummaryRow
                 label="Masterclass"
-                value={approveTarget.masterclass ? 'Sí asistirá' : 'No asistirá'}
+                value={
+                  approveTarget.masterclassName
+                    ? approveTarget.masterclassName
+                    : approveTarget.masterclass
+                      ? 'Sí asistirá'
+                      : 'No asistirá'
+                }
               />
             </dl>
 
@@ -1101,7 +1108,7 @@ export default function AdminReservations() {
                 setRejectReason(event.target.value)
                 if (rejectError) setRejectError('')
               }}
-              placeholder="Ej.: El agente no tiene disponibilidad ese día. Le contactaremos para reagendar."
+              placeholder="Ej.: El asesor no tiene disponibilidad ese día. Le contactaremos para reagendar."
               hint="Queda guardado en la solicitud para que cualquier administrador sepa qué pasó."
             />
           </div>
@@ -1141,7 +1148,7 @@ export default function AdminReservations() {
             <div className="flex items-start gap-3 rounded-2xl bg-red-50 px-4 py-3 ring-1 ring-red-200">
               <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-600" aria-hidden="true" />
               <p className="text-sm leading-snug text-red-700">
-                Se liberará el horario del agente (quedará disponible para otro cliente) y las
+                Se liberará el horario del asesor (quedará disponible para otro cliente) y las
                 entradas ya emitidas se anularán: sus códigos QR dejarán de funcionar en la puerta.
                 Esta acción no se puede deshacer.
               </p>
@@ -1149,7 +1156,7 @@ export default function AdminReservations() {
 
             <dl className="divide-y divide-belen-blue/10 rounded-2xl bg-belen-cream/70 px-4 ring-1 ring-belen-blue/10">
               <SummaryRow label="Cliente" value={cancelTarget.fullName} />
-              <SummaryRow label="Agente" value={cancelTarget.agentName} />
+              <SummaryRow label="Asesor" value={cancelTarget.agentName} />
               <SummaryRow
                 label="Cita"
                 value={`${dayLabel(config, cancelTarget.day)} · ${formatHourRange(

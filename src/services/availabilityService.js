@@ -9,7 +9,7 @@ import { COL, slotId } from '../lib/constants'
  */
 
 const LOAD_ERROR =
-  'No se pudo cargar la disponibilidad de los agentes. Revisa tu conexión e inténtalo de nuevo.'
+  'No se pudo cargar la disponibilidad de los asesores. Revisa tu conexión e inténtalo de nuevo.'
 
 const slotsCol = () => collection(db, COL.SLOTS)
 

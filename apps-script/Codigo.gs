@@ -79,7 +79,7 @@ function doGet(e) {
   });
 }
 
-/** '10:00' → '10:00 — 11:00' (cada cita dura una hora). */
+/** '10:00' → '10:00 — 10:30' (cada cita dura 30 minutos). */
 function buildHourRange(hour) {
   const raw = String(hour || '').trim();
   const parts = raw.split(':');
@@ -92,7 +92,8 @@ function buildHourRange(hour) {
   const pad = function (n) {
     return n < 10 ? '0' + n : String(n);
   };
-  return pad(h) + ':' + pad(m) + ' — ' + pad((h + 1) % 24) + ':' + pad(m);
+  var end = (h * 60 + m + 30) % (24 * 60); // suma 30 minutos
+  return pad(h) + ':' + pad(m) + ' — ' + pad(Math.floor(end / 60)) + ':' + pad(end % 60);
 }
 
 /** Versión en texto plano del correo (para clientes que no muestran HTML). */
@@ -107,14 +108,17 @@ function buildPlainText(reservation, tickets, hourRange) {
   lines.push('');
   lines.push('  Empresa:  ' + reservation.companyName);
   lines.push('  Código de cliente:  ' + reservation.clientCode);
-  lines.push('  Agente de ventas:  ' + reservation.agentName);
+  lines.push('  Asesor comercial:  ' + reservation.agentName);
   lines.push('  Día:  ' + reservation.dayLabel + ' (' + reservation.dayLetter + ')');
   lines.push('  Hora de tu cita:  ' + hourRange);
   lines.push('  Horario del evento:  ' + EVENT_HOURS);
   lines.push('');
 
   if (reservation.masterclass) {
-    lines.push('Además, quedaste inscrito en la Masterclass. ¡Te esperamos!');
+    var mc = reservation.masterclassName
+      ? 'la Masterclass «' + reservation.masterclassName + '»'
+      : 'la Masterclass';
+    lines.push('Además, quedaste inscrito en ' + mc + '. ¡Te esperamos!');
     lines.push('');
   }
 
@@ -141,7 +145,7 @@ function buildPlainText(reservation, tickets, hourRange) {
  *
  * Entrada:
  *   { secret, to, reservation: { fullName, companyName, clientCode, agentName,
- *                                dayLabel, dayLetter, hour, masterclass },
+ *                                dayLabel, dayLetter, hour, masterclass, masterclassName },
  *     tickets: [ { serial, holderName, holderType, qrPng } ] }
  *   qrPng = PNG del QR en base64 CRUDO (sin el prefijo 'data:image/png;base64,').
  *
@@ -174,6 +178,7 @@ function doPost(e) {
       dayLetter: String(reservationIn.dayLetter || ''),
       hour: String(reservationIn.hour || ''),
       masterclass: reservationIn.masterclass === true,
+      masterclassName: String(reservationIn.masterclassName || ''),
     };
 
     const rawTickets = body.tickets;

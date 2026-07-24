@@ -29,13 +29,14 @@ export function formatTime(value) {
   return d.toLocaleTimeString('es-CR', { hour: '2-digit', minute: '2-digit' })
 }
 
-/** '10:00' -> '10:00 a. m.' — el rango de la cita dura 1 hora. */
+/** '10:00' -> '10:00 — 10:30'. Cada cita dura 30 minutos. */
 export function formatHourRange(hour) {
   if (!hour) return '—'
   const [h, m] = hour.split(':').map(Number)
-  const end = (h + 1) % 24
+  if (Number.isNaN(h) || Number.isNaN(m)) return hour
+  const totalEnd = (h * 60 + m + 30) % (24 * 60) // suma 30 minutos, con vuelta a 0 a medianoche
   const pad = (n) => String(n).padStart(2, '0')
-  return `${pad(h)}:${pad(m)} — ${pad(end)}:${pad(m)}`
+  return `${pad(h)}:${pad(m)} — ${pad(Math.floor(totalEnd / 60))}:${pad(totalEnd % 60)}`
 }
 
 /** Busca la etiqueta legible de un día dentro de config.days */
@@ -66,6 +67,19 @@ export function formatISODate(iso) {
     day: 'numeric',
     month: 'long',
   })
+}
+
+/** Busca una masterclass por su id dentro de config.masterclasses. */
+export function masterclassById(config, id) {
+  if (!id) return null
+  return config?.masterclasses?.find((m) => m.id === id) || null
+}
+
+/** 'Empaque sostenible (10:00 – 11:00)'. Acepta el objeto masterclass. */
+export function formatMasterclass(mc) {
+  if (!mc || !mc.name) return ''
+  const range = mc.startTime && mc.endTime ? ` (${mc.startTime} – ${mc.endTime})` : ''
+  return `${mc.name}${range}`
 }
 
 /** Valida un correo con una expresión razonable (no exhaustiva, pero suficiente). */

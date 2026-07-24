@@ -28,7 +28,7 @@ const MAX_OUTPUT_BYTES = 200 * 1024 // 200 KB
 /** Calidad mínima a la que estamos dispuestos a bajar. */
 const MIN_QUALITY = 0.4
 
-const LOAD_ERROR = 'No se pudieron cargar los agentes. Revisa tu conexión e inténtalo de nuevo.'
+const LOAD_ERROR = 'No se pudieron cargar los asesores. Revisa tu conexión e inténtalo de nuevo.'
 
 const agentsCol = () => collection(db, COL.AGENTS)
 
@@ -62,10 +62,10 @@ function sanitizePhoto(photoBase64) {
   if (photoBase64 === null || photoBase64 === undefined || photoBase64 === '') return null
   const value = String(photoBase64)
   if (!value.startsWith('data:image/')) {
-    throw new Error('La foto del agente no tiene un formato válido. Vuelve a seleccionarla.')
+    throw new Error('La foto del asesor no tiene un formato válido. Vuelve a seleccionarla.')
   }
   if (dataUrlBytes(value) > MAX_OUTPUT_BYTES) {
-    throw new Error('La foto del agente supera los 200 KB. Vuelve a subirla para que se comprima.')
+    throw new Error('La foto del asesor supera los 200 KB. Vuelve a subirla para que se comprima.')
   }
   return value
 }
@@ -125,11 +125,11 @@ export function normalizeWhatsapp(value) {
 /** Crea un agente y devuelve su id. */
 export async function createAgent({ name, email, whatsapp, photoBase64, active } = {}) {
   const cleanName = clean(name)
-  if (!cleanName) throw new Error('El nombre del agente es obligatorio.')
+  if (!cleanName) throw new Error('El nombre del asesor es obligatorio.')
 
   const cleanEmail = clean(email)
   if (cleanEmail && !isValidEmail(cleanEmail)) {
-    throw new Error('El correo del agente no es válido.')
+    throw new Error('El correo del asesor no es válido.')
   }
 
   const cleanWhatsapp = normalizeWhatsapp(whatsapp)
@@ -147,30 +147,30 @@ export async function createAgent({ name, email, whatsapp, photoBase64, active }
     return ref.id
   } catch (err) {
     console.error('[agentsService] createAgent', err)
-    throw new Error('No se pudo crear el agente. Revisa tu conexión y tus permisos de administrador.')
+    throw new Error('No se pudo crear el asesor. Revisa tu conexión y tus permisos de administrador.')
   }
 }
 
 /** Actualiza los campos indicados de un agente. */
 export async function updateAgent(id, patch) {
   const agentId = clean(id)
-  if (!agentId) throw new Error('No encontramos el agente que quieres actualizar.')
+  if (!agentId) throw new Error('No encontramos el asesor que quieres actualizar.')
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
-    throw new Error('No hay cambios que guardar en el agente.')
+    throw new Error('No hay cambios que guardar en el asesor.')
   }
 
   const payload = {}
 
   if ('name' in patch) {
     const cleanName = clean(patch.name)
-    if (!cleanName) throw new Error('El nombre del agente es obligatorio.')
+    if (!cleanName) throw new Error('El nombre del asesor es obligatorio.')
     payload.name = cleanName
   }
 
   if ('email' in patch) {
     const cleanEmail = clean(patch.email)
     if (cleanEmail && !isValidEmail(cleanEmail)) {
-      throw new Error('El correo del agente no es válido.')
+      throw new Error('El correo del asesor no es válido.')
     }
     payload.email = cleanEmail
   }
@@ -180,14 +180,14 @@ export async function updateAgent(id, patch) {
   if ('active' in patch) payload.active = Boolean(patch.active)
 
   if (Object.keys(payload).length === 0) {
-    throw new Error('No hay cambios que guardar en el agente.')
+    throw new Error('No hay cambios que guardar en el asesor.')
   }
 
   try {
     await updateDoc(doc(db, COL.AGENTS, agentId), payload)
   } catch (err) {
     console.error('[agentsService] updateAgent', err)
-    throw new Error('No se pudo guardar el agente. Revisa tu conexión y tus permisos de administrador.')
+    throw new Error('No se pudo guardar el asesor. Revisa tu conexión y tus permisos de administrador.')
   }
 }
 
@@ -198,7 +198,7 @@ export async function updateAgent(id, patch) {
  */
 export async function deleteAgent(id) {
   const agentId = clean(id)
-  if (!agentId) throw new Error('No encontramos el agente que quieres eliminar.')
+  if (!agentId) throw new Error('No encontramos el asesor que quieres eliminar.')
 
   let approvedSnap
   try {
@@ -212,12 +212,12 @@ export async function deleteAgent(id) {
     )
   } catch (err) {
     console.error('[agentsService] deleteAgent (check)', err)
-    throw new Error('No se pudo verificar si el agente tiene reservas aprobadas. Inténtalo de nuevo.')
+    throw new Error('No se pudo verificar si el asesor tiene reservas aprobadas. Inténtalo de nuevo.')
   }
 
   if (!approvedSnap.empty) {
     throw new Error(
-      'No puedes eliminar este agente porque tiene reservas aprobadas con entradas ya emitidas. ' +
+      'No puedes eliminar este asesor porque tiene reservas aprobadas con entradas ya emitidas. ' +
         'Desactívalo para que deje de aparecer en el formulario público y conserve su historial.',
     )
   }
@@ -226,7 +226,7 @@ export async function deleteAgent(id) {
     await deleteDoc(doc(db, COL.AGENTS, agentId))
   } catch (err) {
     console.error('[agentsService] deleteAgent', err)
-    throw new Error('No se pudo eliminar el agente. Revisa tu conexión y tus permisos de administrador.')
+    throw new Error('No se pudo eliminar el asesor. Revisa tu conexión y tus permisos de administrador.')
   }
 }
 

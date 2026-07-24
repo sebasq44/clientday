@@ -4,6 +4,7 @@ import { doc, onSnapshot } from 'firebase/firestore'
 import {
   CalendarDays,
   Clock,
+  GraduationCap,
   Plus,
   RefreshCw,
   Save,
@@ -28,7 +29,7 @@ import {
   TICKET_COUNTER_DOC,
   formatSerial,
 } from '../lib/constants'
-import { clean, formatDateTime } from '../lib/format'
+import { clean, formatDateTime, formatMasterclass } from '../lib/format'
 
 const HOUR_RE = /^([01]\d|2[0-3]):[0-5]\d$/
 const DAY_ID_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -57,12 +58,24 @@ const RESET_DELETES = [
   'Todas las entradas y sus códigos QR.',
   'La bitácora de escaneos de la puerta.',
   'Los horarios ocupados: todos vuelven a quedar libres.',
-  'Todos los agentes de venta, con sus fotos.',
-  'Todas las cuentas de agentes y de seguridad del panel.',
+  'Todos los asesores comerciales, con sus fotos.',
+  'Todas las cuentas de asesores comerciales y de seguridad del panel.',
 ]
 
 /** '1 reserva' / '3 reservas' */
 const plural = (count, one, many) => `${count} ${count === 1 ? one : many}`
+
+// Contador de módulo para derivar ids estables de masterclasses sin usar Math.random en el render.
+let masterclassSeq = 0
+
+/** Genera un id estable 'mc-...' para una masterclass nueva. */
+function newMasterclassId() {
+  masterclassSeq += 1
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `mc-${crypto.randomUUID().slice(0, 8)}`
+  }
+  return `mc-${Date.now().toString(36)}-${masterclassSeq}`
+}
 
 /** '2026-09-08' -> Date local (evita el corrimiento de zona horaria de new Date('2026-09-08')). */
 function parseDayId(id) {
@@ -95,6 +108,12 @@ function pickEditable(config) {
     formOpen: config.formOpen !== false,
     allowCompanion: config.allowCompanion !== false,
     masterclassEnabled: config.masterclassEnabled !== false,
+    masterclasses: (config.masterclasses || []).map((mc) => ({
+      id: mc.id ?? '',
+      name: mc.name ?? '',
+      startTime: mc.startTime ?? '',
+      endTime: mc.endTime ?? '',
+    })),
     days: (config.days || []).map((day) => ({
       id: day.id ?? '',
       label: day.label ?? '',
@@ -423,6 +442,34 @@ export default function AdminSettings() {
     }))
   }
 
+  // ------------------------------------------------- Masterclasses (lista informativa)
+
+  const setMasterclass = (index, patch) => {
+    setDraftSafe((current) => ({
+      ...current,
+      masterclasses: current.masterclasses.map((mc, i) =>
+        i === index ? { ...mc, ...patch } : mc,
+      ),
+    }))
+  }
+
+  const addMasterclass = () => {
+    setDraftSafe((current) => ({
+      ...current,
+      masterclasses: [
+        ...current.masterclasses,
+        { id: newMasterclassId(), name: '', startTime: '', endTime: '' },
+      ],
+    }))
+  }
+
+  const removeMasterclass = (index) => {
+    setDraftSafe((current) => ({
+      ...current,
+      masterclasses: current.masterclasses.filter((_, i) => i !== index),
+    }))
+  }
+
   const confirmRemove = () => {
     if (!removeTarget) return
     if (removeTarget.type === 'day') removeDay(removeTarget.index)
@@ -439,6 +486,12 @@ export default function AdminSettings() {
     formOpen: Boolean(draft.formOpen),
     allowCompanion: Boolean(draft.allowCompanion),
     masterclassEnabled: Boolean(draft.masterclassEnabled),
+    masterclasses: draft.masterclasses.map((mc) => ({
+      id: clean(mc.id) || newMasterclassId(),
+      name: clean(mc.name),
+      startTime: clean(mc.startTime),
+      endTime: clean(mc.endTime),
+    })),
     days: draft.days.map((day) => ({
       id: clean(day.id),
       label: clean(day.label),
@@ -450,7 +503,7 @@ export default function AdminSettings() {
   })
 
   const validate = (payload) => {
-    const next = { days: {} }
+    const next = { days: {}, masterclasses: {} }
     const messages = []
 
     if (!payload.eventName) {
@@ -492,6 +545,18 @@ export default function AdminSettings() {
       next.hours = 'Hay horas con un formato inválido. Usa HH:mm.'
       messages.push(next.hours)
     }
+
+    // Masterclasses: el nombre es obligatorio; las horas son opcionales pero, si vienen, HH:mm.
+    payload.masterclasses.forEach((mc, index) => {
+      const mcErrors = {}
+      if (!mc.name) mcErrors.name = 'Escribe un nombre para la masterclass.'
+      if (mc.startTime && !HOUR_RE.test(mc.startTime)) mcErrors.startTime = 'Usa el formato HH:mm.'
+      if (mc.endTime && !HOUR_RE.test(mc.endTime)) mcErrors.endTime = 'Usa el formato HH:mm.'
+      if (Object.keys(mcErrors).length > 0) {
+        next.masterclasses[index] = mcErrors
+        messages.push(`Revisa la masterclass ${index + 1} de la lista.`)
+      }
+    })
 
     if (!payload.ticketPrefix) {
       next.ticketPrefix = 'El prefijo de la entrada es obligatorio.'
@@ -591,7 +656,7 @@ export default function AdminSettings() {
       toast.success(
         `Sistema reiniciado: se eliminaron ${plural(result.reservations, 'reserva', 'reservas')}, ` +
           `${plural(result.tickets, 'entrada', 'entradas')}, ` +
-          `${plural(result.agents, 'agente', 'agentes')} y ` +
+          `${plural(result.agents, 'asesor comercial', 'asesores comerciales')} y ` +
           `${plural(result.users, 'cuenta del panel', 'cuentas del panel')}. ` +
           'La configuración volvió a sus valores por defecto.',
       )
@@ -856,7 +921,7 @@ export default function AdminSettings() {
       {/* 4 ------------------------------------------------ Horas disponibles */}
       <Card
         title="Horas disponibles"
-        subtitle="Cada cita dura una hora. Las horas se ordenan solas."
+        subtitle="Cada cita dura 30 minutos. Las horas se ordenan solas."
       >
         {draft.hours.length === 0 ? (
           <div className="rounded-2xl bg-belen-cream/60 px-4 py-6 text-center ring-1 ring-belen-blue/10">
@@ -929,6 +994,118 @@ export default function AdminSettings() {
             {errors.hours}
           </p>
         )}
+      </Card>
+
+      {/* 4b ----------------------------------------------- Masterclasses */}
+      <Card
+        title="Masterclasses"
+        subtitle="Las charlas que el cliente puede elegir en el formulario. La hora de inicio y fin es opcional."
+        action={
+          <Button variant="secondary" size="sm" icon={Plus} onClick={addMasterclass}>
+            Agregar masterclass
+          </Button>
+        }
+      >
+        {!draft.masterclassEnabled && (
+          <div className="mb-4 flex gap-3 rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200">
+            <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
+            <p className="min-w-0 text-sm leading-snug text-amber-800">
+              La masterclass está oculta en el formulario público (el interruptor «Mostrar
+              masterclass» está apagado). Puedes seguir editando esta lista aquí.
+            </p>
+          </div>
+        )}
+
+        {draft.masterclasses.length === 0 ? (
+          <EmptyState
+            icon={GraduationCap}
+            title="Sin masterclasses configuradas"
+            description="Agrega al menos una masterclass para que el cliente pueda elegirla en el formulario."
+            action={
+              <Button icon={Plus} onClick={addMasterclass}>
+                Agregar masterclass
+              </Button>
+            }
+          />
+        ) : (
+          <ul className={['space-y-3', draft.masterclassEnabled ? '' : 'opacity-70'].join(' ')}>
+            {draft.masterclasses.map((mc, index) => {
+              const mcErrors = errors.masterclasses?.[index] || {}
+              const preview = formatMasterclass({
+                name: clean(mc.name),
+                startTime: mc.startTime,
+                endTime: mc.endTime,
+              })
+
+              return (
+                <li
+                  key={mc.id || `mc-${index}`}
+                  className="rounded-2xl bg-belen-cream/60 p-3 ring-1 ring-belen-blue/10"
+                >
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+                    <div className="xl:col-span-6">
+                      <Input
+                        label="Nombre"
+                        value={mc.name}
+                        onChange={(event) => setMasterclass(index, { name: event.target.value })}
+                        error={mcErrors.name}
+                        placeholder="Empaque sostenible"
+                      />
+                    </div>
+
+                    <div className="xl:col-span-2">
+                      <Input
+                        label="Inicio"
+                        type="time"
+                        value={mc.startTime}
+                        onChange={(event) =>
+                          setMasterclass(index, { startTime: event.target.value })
+                        }
+                        error={mcErrors.startTime}
+                      />
+                    </div>
+
+                    <div className="xl:col-span-2">
+                      <Input
+                        label="Fin"
+                        type="time"
+                        value={mc.endTime}
+                        onChange={(event) => setMasterclass(index, { endTime: event.target.value })}
+                        error={mcErrors.endTime}
+                      />
+                    </div>
+
+                    <div className="flex items-end justify-end xl:col-span-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={Trash2}
+                        onClick={() => removeMasterclass(index)}
+                        aria-label={`Quitar la masterclass ${mc.name || index + 1}`}
+                        className="mb-1 text-red-600 hover:bg-red-50 active:bg-red-100"
+                      />
+                    </div>
+                  </div>
+
+                  {preview && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Vista previa:{' '}
+                      <span className="font-semibold text-belen-blue">{preview}</span>
+                    </p>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
+        <div className="mt-4 flex gap-3 rounded-xl bg-belen-cream/70 p-3 ring-1 ring-belen-blue/10">
+          <GraduationCap className="mt-0.5 h-5 w-5 shrink-0 text-belen-blue/60" aria-hidden="true" />
+          <p className="min-w-0 text-sm leading-snug text-slate-500">
+            La masterclass es solo informativa: aparece en el boleto del cliente y en el correo de
+            confirmación, pero no reserva cupos ni impone bloqueos de horario.
+          </p>
+        </div>
       </Card>
 
       {/* 5 ------------------------------------------------ Entradas */}
@@ -1030,7 +1207,7 @@ export default function AdminSettings() {
                   aria-hidden="true"
                 />
                 <p className="min-w-0 text-sm leading-snug text-amber-800">
-                  <strong>Aviso importante:</strong> las cuentas de correo de agentes y seguridad
+                  <strong>Aviso importante:</strong> las cuentas de correo de asesores comerciales y seguridad
                   seguirán existiendo en Firebase Authentication, pero se quedarán{' '}
                   <strong>sin ningún permiso</strong> (no podrán entrar al panel). Para eliminarlas
                   del todo hay que borrarlas a mano en la consola de Firebase, en{' '}
@@ -1233,7 +1410,7 @@ export default function AdminSettings() {
             <div className="flex gap-3 rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200">
               <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
               <p className="min-w-0 text-sm leading-snug text-amber-800">
-                <strong>Aviso importante:</strong> las cuentas de correo de agentes y seguridad
+                <strong>Aviso importante:</strong> las cuentas de correo de asesores comerciales y seguridad
                 seguirán existiendo en Firebase Authentication, pero se quedarán{' '}
                 <strong>sin ningún permiso</strong> (no podrán entrar al panel). Para eliminarlas del
                 todo hay que borrarlas a mano en la consola de Firebase, en{' '}
@@ -1287,7 +1464,7 @@ export default function AdminSettings() {
                 />
                 <p className="min-w-0 text-sm font-semibold leading-snug text-red-800">
                   Última oportunidad para echarte atrás. Al confirmar, se borrarán las reservas, las
-                  entradas, la bitácora, los agentes y las cuentas del panel.
+                  entradas, la bitácora, los asesores comerciales y las cuentas del panel.
                 </p>
               </div>
 

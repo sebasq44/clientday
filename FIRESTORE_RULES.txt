@@ -179,7 +179,8 @@ service cloud.firestore {
           data.keys().hasOnly([
             'clientCode', 'fullName', 'companyName', 'email', 'phone',
             'hasCompanion', 'companionName', 'agentId', 'agentName',
-            'day', 'hour', 'masterclass', 'status', 'rejectionReason',
+            'day', 'hour', 'masterclass', 'masterclassId', 'masterclassName',
+            'status', 'rejectionReason',
             'emailStatus', 'emailError', 'emailSentAt', 'ticketIds',
             'createdAt', 'approvedAt', 'reviewedBy'
           ])
@@ -201,6 +202,9 @@ service cloud.firestore {
           && data.hour.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
           && data.hasCompanion is bool
           && data.masterclass is bool
+          // Masterclass elegida (informativa): opcionales, pero si vienen deben ser texto acotado.
+          && (!has(data, 'masterclassId') || isBoundedString(data.masterclassId, 64))
+          && (!has(data, 'masterclassName') || isBoundedString(data.masterclassName, 160))
           && (
             data.hasCompanion
               ? isFilledString(data.companionName, 120)

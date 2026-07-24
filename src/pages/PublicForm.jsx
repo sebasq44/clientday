@@ -27,7 +27,7 @@ import { getOccupiedSlots, subscribeOccupiedSlots } from '../services/availabili
 
 import { ERRORS, slotId } from '../lib/constants'
 import { celebrateReservation } from '../lib/celebrate'
-import { clean, dayLabel, dayLetter, formatHourRange, isValidEmail } from '../lib/format'
+import { clean, dayLabel, dayLetter, formatHourRange, formatMasterclass, isValidEmail } from '../lib/format'
 
 /* ------------------------------------------------------------------------------------------------
  * Estilos locales de la página
@@ -90,6 +90,7 @@ const FIELD_ORDER = [
   'day',
   'hour',
   'masterclass',
+  'masterclassId',
 ]
 
 const EMPTY_FORM = {
@@ -104,6 +105,7 @@ const EMPTY_FORM = {
   day: '',
   hour: '',
   masterclass: null,
+  masterclassId: '',
 }
 
 /** Iniciales para el avatar de respaldo cuando el agente no tiene foto. */
@@ -294,6 +296,39 @@ function DayPill({ day, selected, onSelect }) {
   )
 }
 
+/** Tarjeta seleccionable de una masterclass (nombre + rango horario), al estilo de día/hora. */
+function MasterclassCard({ masterclass, selected, onSelect }) {
+  const hasRange = Boolean(masterclass.startTime && masterclass.endTime)
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      title={formatMasterclass(masterclass)}
+      onClick={() => onSelect(masterclass.id)}
+      className={[
+        'relative flex flex-col items-start gap-1 rounded-xl bg-white p-3 pr-9 text-left',
+        'transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-belen-orange focus-visible:ring-offset-2',
+        selected
+          ? 'belen-pick text-belen-blue shadow-card ring-2 ring-belen-orange'
+          : 'text-belen-ink ring-1 ring-belen-blue/15 hover:-translate-y-0.5 hover:bg-belen-blue/5 hover:ring-belen-blue/40',
+      ].join(' ')}
+    >
+      {selected && (
+        <span className="belen-pop absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-belen-orange text-white">
+          <Check className="h-3 w-3" aria-hidden="true" />
+        </span>
+      )}
+      <span className="text-sm font-semibold leading-tight">{masterclass.name}</span>
+      {hasRange && (
+        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+          <Clock className="h-3.5 w-3.5 text-belen-orange" aria-hidden="true" />
+          {masterclass.startTime} – {masterclass.endTime}
+        </span>
+      )}
+    </button>
+  )
+}
+
 /** Aviso informativo (azul) dentro del formulario. */
 function Notice({ icon: Icon = AlertTriangle, children }) {
   return (
@@ -366,7 +401,7 @@ function Header({ config }) {
         )}
 
         <p className="mt-5 max-w-md text-sm leading-relaxed text-white/75">
-          Reserva tu cita con el agente de ventas que te acompañará durante el evento. Elige día y
+          Reserva tu cita con el asesor comercial que te acompañará durante el evento. Elige día y
           hora, y te enviaremos tu entrada por correo al confirmarla.
         </p>
       </div>
@@ -475,7 +510,7 @@ function ClosedPanel({ config }) {
         . Si ya enviaste la tuya, revisa tu correo: ahí recibirás tu entrada cuando sea confirmada.
       </p>
       <p className="mt-5 text-xs text-slate-500">
-        ¿Dudas? Escríbele a tu agente de ventas de Empaques Belén.
+        ¿Dudas? Escríbele a tu asesor comercial de Empaques Belén.
       </p>
       <div className="belen-divider mt-6">
         <span />
@@ -532,7 +567,7 @@ function SuccessPanel({ data, onReset }) {
           )}
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Tu agente
+              Tu asesor
             </p>
             <p className="truncate text-sm font-bold text-belen-ink">{data.agentName}</p>
           </div>
@@ -576,6 +611,22 @@ function SuccessPanel({ data, onReset }) {
               <dd className="truncate text-sm font-bold text-belen-ink">{data.companyName}</dd>
             </div>
           </div>
+
+          {data.masterclassLabel && (
+            <div className="flex items-center gap-2.5 rounded-xl bg-white p-3 ring-1 ring-belen-blue/10 sm:col-span-2">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-belen-orange/10">
+                <GraduationCap className="h-4 w-4 text-belen-orange" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Masterclass
+                </dt>
+                <dd className="text-sm font-bold leading-snug text-belen-ink">
+                  {data.masterclassLabel}
+                </dd>
+              </div>
+            </div>
+          )}
         </dl>
 
         <div className="mt-3 flex flex-wrap gap-2">
@@ -583,7 +634,7 @@ function SuccessPanel({ data, onReset }) {
             <Ticket className="h-3.5 w-3.5 text-belen-orange" aria-hidden="true" />
             {data.ticketCount === 2 ? '2 entradas (titular y acompañante)' : '1 entrada (titular)'}
           </span>
-          {data.masterclass && (
+          {data.masterclass && !data.masterclassLabel && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-belen-blue ring-1 ring-belen-blue/15">
               <GraduationCap className="h-3.5 w-3.5 text-belen-orange" aria-hidden="true" />
               Asistirá a la Masterclass
@@ -667,6 +718,10 @@ export default function PublicForm() {
     [config],
   )
   const hours = useMemo(() => config?.hours || [], [config])
+  const masterclasses = useMemo(
+    () => (Array.isArray(config?.masterclasses) ? config.masterclasses : []),
+    [config],
+  )
 
   const allowCompanion = config?.allowCompanion !== false
   const masterclassEnabled = config?.masterclassEnabled !== false
@@ -691,7 +746,7 @@ export default function PublicForm() {
     if (activeAgents.some((agent) => agent.id === form.agentId)) return
 
     setForm((current) => ({ ...current, agentId: '', hour: '' }))
-    toast.info('El agente que habías elegido ya no está disponible. Elige otro, por favor.')
+    toast.info('El asesor que habías elegido ya no está disponible. Elige otro, por favor.')
   }, [activeAgents, agentsLoading, form.agentId, success, toast])
 
   // El día o la hora dejaron de existir en la configuración.
@@ -751,6 +806,14 @@ export default function PublicForm() {
     [setField],
   )
 
+  const handleMasterclassChoice = useCallback(
+    (value) => {
+      setField('masterclass', value)
+      if (!value) setField('masterclassId', '')
+    },
+    [setField],
+  )
+
   const handleAgentSelect = useCallback(
     (agentId) => setField('agentId', agentId === form.agentId ? '' : agentId),
     [setField, form.agentId],
@@ -791,7 +854,7 @@ export default function PublicForm() {
       }
     }
 
-    if (!form.agentId) next.agentId = 'Elige al agente de ventas que te acompañará.'
+    if (!form.agentId) next.agentId = 'Elige al asesor comercial que te acompañará.'
     if (!form.day) next.day = 'Elige el día de tu cita.'
 
     if (!form.hour) next.hour = 'Elige la hora de tu cita.'
@@ -801,10 +864,17 @@ export default function PublicForm() {
 
     if (masterclassEnabled && form.masterclass === null) {
       next.masterclass = 'Indícanos si asistirás a la Masterclass.'
+    } else if (
+      masterclassEnabled &&
+      form.masterclass === true &&
+      masterclasses.length > 0 &&
+      !form.masterclassId
+    ) {
+      next.masterclassId = 'Selecciona a cuál masterclass asistirás.'
     }
 
     return next
-  }, [form, occupied, allowCompanion, masterclassEnabled])
+  }, [form, occupied, allowCompanion, masterclassEnabled, masterclasses])
 
   const handleSubmit = useCallback(
     async (event) => {
@@ -835,6 +905,10 @@ export default function PublicForm() {
 
         const hasCompanion = allowCompanion && form.hasCompanion === true
         const masterclass = masterclassEnabled && form.masterclass === true
+        const masterclassId = masterclass ? form.masterclassId : ''
+        const chosenMasterclass = masterclassId
+          ? masterclasses.find((mc) => mc.id === masterclassId) || null
+          : null
 
         await createReservation({
           clientCode: form.clientCode,
@@ -848,6 +922,7 @@ export default function PublicForm() {
           day: form.day,
           hour: form.hour,
           masterclass,
+          masterclassId,
         })
 
         setSuccess({
@@ -861,6 +936,7 @@ export default function PublicForm() {
           dayLetter: dayLetter(config, form.day),
           hour: form.hour,
           masterclass,
+          masterclassLabel: chosenMasterclass ? formatMasterclass(chosenMasterclass) : '',
           ticketCount: hasCompanion ? 2 : 1,
         })
         window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -885,6 +961,7 @@ export default function PublicForm() {
       form,
       allowCompanion,
       masterclassEnabled,
+      masterclasses,
       config,
       selectedAgent,
     ],
@@ -1061,13 +1138,13 @@ export default function PublicForm() {
               required
               hint="Te acompañará durante toda tu visita al evento."
             >
-              Agente de ventas
+              Asesor comercial
             </SectionTitle>
 
             {noAgents ? (
               <Notice>
-                Todavía no hay agentes de ventas disponibles para reservar. Vuelve a intentarlo más
-                tarde o contacta a tu agente de Empaques Belén.
+                Todavía no hay asesores comerciales disponibles para reservar. Vuelve a intentarlo
+                más tarde o contacta a tu asesor de Empaques Belén.
               </Notice>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -1114,7 +1191,7 @@ export default function PublicForm() {
               required
               hint={
                 canPickHour
-                  ? `Disponibilidad en vivo para ${selectedAgent?.name || 'tu agente'}. Cada cita dura 1 hora.`
+                  ? `Disponibilidad en vivo para ${selectedAgent?.name || 'tu asesor'}. Cada cita dura 30 minutos.`
                   : undefined
               }
             >
@@ -1124,7 +1201,7 @@ export default function PublicForm() {
             {!canPickHour && (
               <div className="mb-3">
                 <Notice>
-                  Elige primero tu <span className="font-semibold">agente de ventas</span> y el{' '}
+                  Elige primero tu <span className="font-semibold">asesor comercial</span> y el{' '}
                   <span className="font-semibold">día</span> para ver los horarios disponibles.
                 </Notice>
               </div>
@@ -1157,10 +1234,30 @@ export default function PublicForm() {
               </SectionTitle>
               <YesNoCards
                 value={form.masterclass}
-                onChange={(value) => setField('masterclass', value)}
+                onChange={handleMasterclassChoice}
                 invalid={Boolean(errors.masterclass)}
               />
               <FieldError message={errors.masterclass} />
+
+              {/* Selector de a cuál masterclass asistir (solo si eligió «Sí» y hay lista) */}
+              {form.masterclass === true && masterclasses.length > 0 && (
+                <div ref={registerField('masterclassId')} className="mt-4">
+                  <SectionTitle icon={GraduationCap} required hint="Elige a cuál sesión asistirás.">
+                    ¿A cuál masterclass asistirás?
+                  </SectionTitle>
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    {masterclasses.map((mc) => (
+                      <MasterclassCard
+                        key={mc.id}
+                        masterclass={mc}
+                        selected={form.masterclassId === mc.id}
+                        onSelect={(id) => setField('masterclassId', id)}
+                      />
+                    ))}
+                  </div>
+                  <FieldError message={errors.masterclassId} />
+                </div>
+              )}
             </div>
           )}
 

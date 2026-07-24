@@ -134,6 +134,38 @@ function sanitizeHours(value) {
 }
 
 /**
+ * Normaliza la lista de masterclasses. Es opcional (puede quedar vacía). Se descartan las que no
+ * tengan nombre; startTime/endTime son opcionales pero, si vienen, deben ser HH:mm. Cada una
+ * conserva su `id` (o se le genera uno estable si falta), para poder referenciarla en la reserva.
+ */
+function sanitizeMasterclasses(value) {
+  if (!Array.isArray(value)) return []
+  const seen = new Set()
+  const list = []
+  value.forEach((raw, index) => {
+    const name = clean(raw?.name)
+    if (!name) return // sin nombre: se ignora (la UI ya avisa antes de guardar)
+
+    let id = clean(raw?.id)
+    if (!id || seen.has(id)) id = `mc-${index + 1}`
+    while (seen.has(id)) id = `${id}x`
+    seen.add(id)
+
+    const startTime = clean(raw?.startTime)
+    const endTime = clean(raw?.endTime)
+    if (startTime && !HOUR_RE.test(startTime)) {
+      throw new Error(`La hora de inicio de "${name}" debe tener el formato HH:mm.`)
+    }
+    if (endTime && !HOUR_RE.test(endTime)) {
+      throw new Error(`La hora de fin de "${name}" debe tener el formato HH:mm.`)
+    }
+
+    list.push({ id, name, startTime, endTime })
+  })
+  return list
+}
+
+/**
  * Guarda cambios parciales de la configuración (merge) y sella `updatedAt`.
  * Valida cada campo y lanza Error en español si algo no cuadra.
  */
@@ -162,6 +194,7 @@ export async function updateConfig(patch) {
   if ('formOpen' in patch) payload.formOpen = Boolean(patch.formOpen)
   if ('allowCompanion' in patch) payload.allowCompanion = Boolean(patch.allowCompanion)
   if ('masterclassEnabled' in patch) payload.masterclassEnabled = Boolean(patch.masterclassEnabled)
+  if ('masterclasses' in patch) payload.masterclasses = sanitizeMasterclasses(patch.masterclasses)
   if ('days' in patch) payload.days = sanitizeDays(patch.days)
   if ('hours' in patch) payload.hours = sanitizeHours(patch.hours)
 

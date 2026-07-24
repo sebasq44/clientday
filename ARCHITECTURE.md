@@ -55,12 +55,15 @@ la paleta salvo los semánticos de estado (verde/rojo/ámbar) listados en §7.
   formOpen: true,                      // bool — si false, el formulario público muestra "cerrado"
   allowCompanion: true,                // bool — si false, se oculta el bloque de acompañante
   masterclassEnabled: true,            // bool — si false, se oculta la pregunta de masterclass
+  masterclasses: [                     // array — lista informativa que el cliente elige si asiste
+    { id: 'mc-1', name: 'Empaque sostenible', startTime: '10:00', endTime: '11:00' }
+  ],
   days: [                              // array — editable desde el admin
     { id: '2026-09-08', label: '8 Septiembre', letter: 'M', enabled: true },
     { id: '2026-09-09', label: '9 Septiembre', letter: 'K', enabled: true }
   ],
-  hours: [                             // array de strings HH:mm, 1 hora por cita
-    '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00'
+  hours: [                             // array de strings HH:mm — cada cita dura 30 MIN (pasos de :30)
+    '09:00', '09:30', '10:00', '10:30', '11:00', /* … */ '15:30'
   ],
   ticketPrefix: 'GEN',                 // string — prefijo del serial
   updatedAt: Timestamp
@@ -70,7 +73,11 @@ la paleta salvo los semánticos de estado (verde/rojo/ámbar) listados en §7.
 > `days[].id` es la CLAVE que se guarda en `reservation.day`. `hours[]` los valores de
 > `reservation.hour`. `letter` es la M/K que aparece impresa en la entrada.
 
-### `agents/{agentId}` — agentes de venta
+### `agents/{agentId}` — asesores comerciales
+
+> **Terminología:** en el código y la base de datos se conserva `agent`/`agentId`/`agentName`, pero
+> **de cara al usuario el término es «Asesor comercial»** (la empresa dejó de usar «agente»). Todo
+> texto visible dice «asesor»; los identificadores internos no cambian.
 
 ```js
 {
@@ -93,11 +100,13 @@ la paleta salvo los semánticos de estado (verde/rojo/ámbar) listados en §7.
   phone: '',                  // string, opcional
   hasCompanion: false,        // bool
   companionName: '',          // string — requerido si hasCompanion === true
-  agentId: 'abc123',          // string, requerido — ref a agents/{id}
+  agentId: 'abc123',          // string, requerido — ref a agents/{id} (asesor comercial)
   agentName: 'Nombre Apellido', // string — desnormalizado para poder listar sin joins
   day: '2026-09-08',          // string — debe existir en config.days[].id
   hour: '10:00',              // string — debe existir en config.hours[]
   masterclass: true,          // bool
+  masterclassId: 'mc-1',      // string | '' — id de config.masterclasses (requerido si masterclass y hay lista)
+  masterclassName: 'Empaque sostenible', // string | '' — desnormalizado para el boleto/correo
   status: 'pending',          // 'pending' | 'approved' | 'rejected' | 'cancelled'
   rejectionReason: '',        // string — solo si rejected
   emailStatus: 'not_sent',    // 'not_sent' | 'sending' | 'sent' | 'failed'

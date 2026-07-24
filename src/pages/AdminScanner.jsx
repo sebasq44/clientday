@@ -787,7 +787,7 @@ function ScanResultScreen({ result, config, agent, onNext, onClose }) {
           <dl className="mt-5 space-y-px overflow-hidden rounded-2xl bg-white/10 text-sm">
             <ResultRow label="Empresa" value={ticket.companyName} />
             <ResultRow label="Código de cliente" value={ticket.clientCode} />
-            <ResultRow label="Agente" value={ticket.agentName} />
+            <ResultRow label="Asesor" value={ticket.agentName} />
             <ResultRow label="Serial" value={ticket.serial} mono />
             <ResultRow
               label="Cita"
@@ -849,8 +849,8 @@ function ScanResultScreen({ result, config, agent, onNext, onClose }) {
 
           {isCheckIn && !whatsappUrl && ticket && (
             <p className="text-center text-xs font-medium text-white/70">
-              {agent?.name || 'El agente'} no tiene un WhatsApp registrado. Agrégalo en
-              «Agentes» para poder avisarle.
+              {agent?.name || 'El asesor'} no tiene un WhatsApp registrado. Agrégalo en
+              «Asesores» para poder avisarle.
             </p>
           )}
         </div>

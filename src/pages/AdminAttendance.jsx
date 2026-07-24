@@ -14,7 +14,8 @@ import { useAuth } from '../hooks/useAuth'
 import { useConfig } from '../hooks/useConfig'
 import { markPrizeAwarded, removePrizeAwarded, subscribeTickets } from '../services/ticketsService'
 import { HOLDER_TYPE, HOLDER_TYPE_LABEL, TICKET_STATUS, TICKET_STATUS_LABEL } from '../lib/constants'
-import { csvCell, dayLabel, formatHourRange, formatTime } from '../lib/format'
+import { dayLabel, formatHourRange, formatTime } from '../lib/format'
+import { exportToXlsx } from '../lib/exportXlsx'
 import Badge from '../components/ui/Badge'
 import Button from '../components/ui/Button'
 import Card from '../components/ui/Card'
@@ -33,21 +34,20 @@ const TABS = [
   { id: 'all', label: 'Todos' },
 ]
 
-const CSV_HEADERS = [
-  'Serial',
+const XLSX_HEADERS = [
   'Portador',
   'Tipo',
   'Empresa',
   'Código de cliente',
-  'Agente',
+  'Asesor',
   'Día',
   'Hora',
+  'Serial',
   'Estado',
-  'Entrada',
-  'Salida',
+  'Hora de ingreso',
+  'Hora de salida',
   'Comida',
   'Premio',
-  'Masterclass',
 ]
 
 /** Base común del distintivo de premio (botón pulsable o indicador de solo lectura). */
@@ -224,47 +224,36 @@ export default function AdminAttendance() {
   const prizeSavingId = prizeBusy ? prizeTarget?.id : null
   const removingPrize = Boolean(prizeTarget?.prizeAt)
 
-  const exportCsv = useCallback(() => {
+  const exportToExcel = useCallback(() => {
     if (visible.length === 0) {
       toast.info('No hay entradas que exportar con los filtros actuales.')
       return
     }
 
-    const rows = visible.map((ticket) => [
-      ticket.serial,
-      ticket.holderName,
-      HOLDER_TYPE_LABEL[ticket.holderType] || ticket.holderType,
-      ticket.companyName,
-      ticket.clientCode,
-      ticket.agentName,
-      dayLabel(config, ticket.day),
-      ticket.hour,
-      TICKET_STATUS_LABEL[ticket.status] || ticket.status,
-      formatTime(ticket.checkInAt),
-      formatTime(ticket.checkOutAt),
-      ticket.mealAt ? `Sí (${formatTime(ticket.mealAt)})` : 'No',
-      ticket.prizeAt ? `Sí (${formatTime(ticket.prizeAt)})` : 'No',
-      ticket.masterclass ? 'Sí' : 'No',
-    ])
+    // Un objeto plano por entrada visible: la clave es el encabezado de columna.
+    const rows = visible.map((ticket) => ({
+      Portador: ticket.holderName,
+      Tipo: HOLDER_TYPE_LABEL[ticket.holderType] || ticket.holderType,
+      Empresa: ticket.companyName,
+      'Código de cliente': ticket.clientCode,
+      Asesor: ticket.agentName,
+      Día: dayLabel(config, ticket.day),
+      Hora: formatHourRange(ticket.hour),
+      Serial: ticket.serial,
+      Estado: TICKET_STATUS_LABEL[ticket.status] || ticket.status,
+      'Hora de ingreso': formatTime(ticket.checkInAt),
+      'Hora de salida': formatTime(ticket.checkOutAt),
+      Comida: ticket.mealAt ? `Sí (${formatTime(ticket.mealAt)})` : 'No',
+      Premio: ticket.prizeAt ? `Sí (${formatTime(ticket.prizeAt)})` : 'No',
+    }))
 
-    const csv = [CSV_HEADERS, ...rows]
-      .map((row) => row.map(csvCell).join(','))
-      .join('\r\n')
+    exportToXlsx(rows, {
+      fileName: 'asistencia-dia-del-cliente.xlsx',
+      sheetName: 'Asistencia',
+      headers: XLSX_HEADERS,
+    })
 
-    // El BOM (U+FEFF) hace que Excel abra el archivo con los acentos correctos.
-    const bom = String.fromCharCode(0xfeff)
-    const blob = new Blob([`${bom}${csv}`], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-
-    link.href = url
-    link.download = `asistencia-dia-del-cliente-${config?.eventYear || 2026}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(url)
-
-    toast.success(`Exportamos ${visible.length} entrada${visible.length === 1 ? '' : 's'} a CSV.`)
+    toast.success(`Exportamos ${visible.length} entrada${visible.length === 1 ? '' : 's'} a Excel.`)
   }, [visible, config, toast])
 
   const feedError = error || (configError && !config ? configError : '')
@@ -325,8 +314,8 @@ export default function AdminAttendance() {
         title="Asistencia"
         subtitle="Todas las entradas emitidas, en vivo."
         action={
-          <Button variant="secondary" size="sm" icon={Download} onClick={exportCsv}>
-            Exportar CSV
+          <Button variant="secondary" size="sm" icon={Download} onClick={exportToExcel}>
+            Exportar a Excel
           </Button>
         }
       >
@@ -334,7 +323,7 @@ export default function AdminAttendance() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <Input
             label="Buscar"
-            placeholder="Nombre, empresa, código, agente o serial"
+            placeholder="Nombre, empresa, código, asesor o serial"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             autoComplete="off"
@@ -354,11 +343,11 @@ export default function AdminAttendance() {
           </Select>
 
           <Select
-            label="Agente"
+            label="Asesor"
             value={agentFilter}
             onChange={(event) => setAgentFilter(event.target.value)}
           >
-            <option value="all">Todos los agentes</option>
+            <option value="all">Todos los asesores</option>
             {agents.map((agent) => (
               <option key={agent.id} value={agent.id}>
                 {agent.name}
@@ -469,7 +458,7 @@ export default function AdminAttendance() {
                     <tr className="text-[11px] uppercase tracking-wider text-slate-500">
                       <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Portador</th>
                       <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Empresa</th>
-                      <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Agente</th>
+                      <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Asesor</th>
                       <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Cita</th>
                       <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Serial</th>
                       <th className="border-b border-belen-blue/10 py-2 pr-4 font-bold">Entrada</th>
@@ -705,7 +694,7 @@ function TicketCard({ ticket, config, canAwardPrize, prizeSaving, onPrize }) {
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-belen-blue/10 pt-3 text-sm">
-        <CardField label="Agente" value={ticket.agentName} />
+        <CardField label="Asesor" value={ticket.agentName} />
         <CardField
           label="Cita"
           value={`${dayLabel(config, ticket.day)} · ${formatHourRange(ticket.hour)}`}

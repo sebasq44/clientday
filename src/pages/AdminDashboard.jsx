@@ -380,7 +380,7 @@ export default function AdminDashboard() {
 
       {/* Ocupación por agente y día */}
       <Card
-        title="Ocupación por agente y día"
+        title="Ocupación por asesor y día"
         subtitle={
           isLoading || !selectedDay
             ? 'Cargando el calendario del evento…'
@@ -438,12 +438,12 @@ export default function AdminDashboard() {
         ) : !gridAgents.length ? (
           <EmptyState
             icon={UserSquare2}
-            title="Aún no hay agentes activos"
-            description="Los clientes solo pueden reservar si hay al menos un agente de ventas activo."
+            title="Aún no hay asesores activos"
+            description="Los clientes solo pueden reservar si hay al menos un asesor comercial activo."
             action={
               <Link to="/admin/agents">
                 <Button variant="primary" size="sm" icon={Users}>
-                  Agregar agentes
+                  Agregar asesores
                 </Button>
               </Link>
             }
@@ -453,7 +453,7 @@ export default function AdminDashboard() {
             <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
               <table className="w-full min-w-[640px] border-separate border-spacing-1 text-left">
                 <caption className="sr-only">
-                  Ocupación de agentes por hora el {dayLabel(config, selectedDay)}
+                  Ocupación de asesores por hora el {dayLabel(config, selectedDay)}
                 </caption>
                 <thead>
                   <tr>
@@ -461,7 +461,7 @@ export default function AdminDashboard() {
                       scope="col"
                       className="w-44 px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-slate-500"
                     >
-                      Agente
+                      Asesor
                     </th>
                     {hours.map((hour) => (
                       <th
@@ -592,7 +592,7 @@ export default function AdminDashboard() {
                   </p>
                   <p className="mt-0.5 truncate text-xs text-slate-500">
                     {dayLabel(config, reservation.day)} · {reservation.hour} ·{' '}
-                    {reservation.agentName || 'Sin agente'} ·{' '}
+                    {reservation.agentName || 'Sin asesor'} ·{' '}
                     {formatDateTime(reservation.createdAt)}
                   </p>
                 </div>

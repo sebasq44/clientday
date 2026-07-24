@@ -205,7 +205,9 @@ export default function TicketPreview({ ticket, config }) {
 
               {ticket.masterclass ? (
                 <p className="mt-3 inline-block rounded-full bg-belen-orange/10 px-3 py-1 text-[11px] font-semibold text-belen-orange">
-                  Incluye Masterclass
+                  {ticket.masterclassName
+                    ? `Masterclass: ${ticket.masterclassName}`
+                    : 'Incluye Masterclass'}
                 </p>
               ) : null}
 

@@ -54,6 +54,7 @@ function buildPayload(reservation, tickets, config, qrPngs) {
       dayLetter: dayLetter(config, reservation.day),
       hour: String(reservation.hour || ''),
       masterclass: Boolean(reservation.masterclass),
+      masterclassName: String(reservation.masterclassName || ''),
     },
     tickets: tickets.map((ticket, index) => ({
       serial: String(ticket.serial || ''),

@@ -138,11 +138,11 @@ export default function AdminUsers() {
           </h2>
           <p className="mt-1 max-w-2xl text-sm text-slate-600">
             Crea cuentas de <strong>Seguridad</strong> (solo escáner y listas). Las cuentas de{' '}
-            <strong>Agente</strong> se crean desde{' '}
+            <strong>Asesor</strong> se crean desde{' '}
             <Link to="/admin/agents" className="font-semibold text-belen-orange hover:underline">
-              Agentes
+              Asesores
             </Link>
-            , al dar acceso a cada agente.
+            , al dar acceso a cada asesor.
           </p>
         </div>
         <Button variant="primary" size="md" icon={UserPlus} onClick={openModal} className="w-full sm:w-auto">
@@ -210,18 +210,18 @@ export default function AdminUsers() {
 
       {/* Agentes con acceso */}
       <Card
-        title="Agentes con acceso"
-        subtitle="Gestiona el alta y la contraseña de cada uno desde la pantalla Agentes"
+        title="Asesores con acceso"
+        subtitle="Gestiona el alta y la contraseña de cada uno desde la pantalla Asesores"
       >
         {groups.agentes.length === 0 ? (
           <EmptyState
             icon={UsersIcon}
-            title="Ningún agente tiene acceso todavía"
-            description="Ve a Agentes y usa «Dar acceso» en el agente que quieras habilitar."
+            title="Ningún asesor tiene acceso todavía"
+            description="Ve a Asesores y usa «Dar acceso» en el asesor que quieras habilitar."
             action={
               <Link to="/admin/agents">
                 <Button variant="secondary" size="sm">
-                  Ir a Agentes
+                  Ir a Asesores
                 </Button>
               </Link>
             }

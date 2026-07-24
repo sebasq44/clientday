@@ -87,11 +87,11 @@ export async function resetEvent(currentUid, onProgress = () => {}) {
     onProgress('Liberando los horarios ocupados…')
     result.slots = await deleteCollection(COL.SLOTS)
 
-    onProgress('Borrando los agentes de venta…')
+    onProgress('Borrando los asesores comerciales…')
     result.agents = await deleteCollection(COL.AGENTS)
 
     // Los usuarios del panel: se borran TODOS menos el superadmin que está ejecutando esto.
-    onProgress('Borrando las cuentas de agentes y de seguridad…')
+    onProgress('Borrando las cuentas de asesores y de seguridad…')
     result.users = await deleteCollection(COL.ADMINS, (id) => id === currentUid)
 
     onProgress('Restaurando la configuración del evento…')

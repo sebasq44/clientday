@@ -77,10 +77,10 @@ export async function createSecurityUser({ email, password, name }) {
  * con role 'agente' + agentId, y enlaza el agente (agents/{agentId}.uid / hasAccess).
  * @returns {Promise<string>} uid creado
  */
-export async function createAgentAccess({ agentId, agentName, agentEmail, email, password }) {
+export async function createAgentAccess({ agentId, agentName, email, password }) {
   const cleanEmail = clean(email).toLowerCase()
   assertCredentials(cleanEmail, password)
-  if (!agentId) throw new Error('Falta el identificador del agente.')
+  if (!agentId) throw new Error('Falta el identificador del asesor.')
 
   const uid = await createAuthAccount(cleanEmail, password)
 
