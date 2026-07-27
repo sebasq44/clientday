@@ -56,7 +56,9 @@ la paleta salvo los semánticos de estado (verde/rojo/ámbar) listados en §7.
   allowCompanion: true,                // bool — si false, se oculta el bloque de acompañante
   masterclassEnabled: true,            // bool — si false, se oculta la pregunta de masterclass
   masterclasses: [                     // array — lista informativa que el cliente elige si asiste
-    { id: 'mc-1', name: 'Empaque sostenible', startTime: '10:00', endTime: '11:00' }
+    // `day` = id de un día del evento (o '' para cualquier día). El formulario solo muestra al cliente
+    // las masterclasses de su día elegido (más las sin día).
+    { id: 'mc-1', name: 'Empaque sostenible', day: '2026-09-08', startTime: '10:00', endTime: '11:00' }
   ],
   days: [                              // array — editable desde el admin
     { id: '2026-09-08', label: '8 Septiembre', letter: 'M', enabled: true },
@@ -89,19 +91,35 @@ la paleta salvo los semánticos de estado (verde/rojo/ámbar) listados en §7.
 }
 ```
 
+### `clients/{cedula}` — base de clientes (importada del Excel)
+
+```js
+{
+  cedula: '3002045363',   // string (solo dígitos) — ES el id del documento; único
+  codigo: 'A001',         // string — código de cliente de la empresa
+  nombre: 'ACME S.A.',    // string — razón social (se usa como companyName en la reserva)
+  vendedor: 'Diego Segura' // string — nombre del asesor asignado (se empareja por nombre con agents)
+}
+```
+
+Se carga desde `/admin/clients` (importación por Excel, `clientsService.importClients`, upsert por
+cédula). El formulario público solo pide la CÉDULA y con ella autocompleta empresa, código y asesor.
+**Lectura pública** (el formulario busca por cédula); escritura solo superadmin.
+
 ### `reservations/{reservationId}` — solicitudes
 
 ```js
 {
-  clientCode: 'C-1042',       // string, requerido
-  fullName: 'Juan Pérez',     // string, requerido
-  companyName: 'ACME S.A.',   // string, requerido
-  email: 'juan@acme.com',     // string, requerido, validado
-  phone: '',                  // string, opcional
+  cedula: '3002045363',       // string, requerido — debe existir en clients/{cedula} (lo digita el cliente)
+  clientCode: 'A001',         // string — AUTOCOMPLETADO desde clients.codigo
+  fullName: 'Juan Pérez',     // string, requerido — nombre de quien ASISTE (lo digita el cliente)
+  companyName: 'ACME S.A.',   // string — AUTOCOMPLETADO desde clients.nombre
+  email: 'juan@acme.com',     // string, requerido, validado (lo digita el cliente)
   hasCompanion: false,        // bool
   companionName: '',          // string — requerido si hasCompanion === true
-  agentId: 'abc123',          // string, requerido — ref a agents/{id} (asesor comercial)
-  agentName: 'Nombre Apellido', // string — desnormalizado para poder listar sin joins
+  vendedor: 'Diego Segura',   // string — nombre del asesor esperado (de clients.vendedor)
+  agentId: 'abc123',          // string — asesor emparejado por nombre; '' si aún no hay asesor con ese nombre
+  agentName: 'Nombre Apellido', // string — desnormalizado; '' si sin asesor
   day: '2026-09-08',          // string — debe existir en config.days[].id
   hour: '10:00',              // string — debe existir en config.hours[]
   masterclass: true,          // bool

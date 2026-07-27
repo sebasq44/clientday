@@ -150,6 +150,17 @@ service cloud.firestore {
     }
 
     // ================================================================
+    // clients/{cedula} — base de clientes importada del Excel
+    // READ público: el formulario busca al cliente por su cédula para autocompletar empresa,
+    //   código y asesor. (Son datos comerciales B2B: razón social, código y nombre del vendedor.)
+    // WRITE solo superadmin: la lista se carga/actualiza desde el panel (importación por Excel).
+    // ================================================================
+    match /clients/{cedula} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // ================================================================
     // slots/{day}_{hour}_{agentId} — bloqueo de disponibilidad
     // Lectura pública (el formulario deshabilita horas ocupadas).
     // El slot se crea/borra DENTRO de la aprobación/cancelación:
@@ -177,25 +188,33 @@ service cloud.firestore {
 
         return
           data.keys().hasOnly([
-            'clientCode', 'fullName', 'companyName', 'email', 'phone',
-            'hasCompanion', 'companionName', 'agentId', 'agentName',
+            'cedula', 'clientCode', 'fullName', 'companyName', 'email',
+            'hasCompanion', 'companionName', 'vendedor', 'agentId', 'agentName',
             'day', 'hour', 'masterclass', 'masterclassId', 'masterclassName',
             'status', 'rejectionReason',
             'emailStatus', 'emailError', 'emailSentAt', 'ticketIds',
             'createdAt', 'approvedAt', 'reviewedBy'
           ])
           && data.keys().hasAll([
-            'clientCode', 'fullName', 'companyName', 'email', 'hasCompanion',
+            'cedula', 'clientCode', 'fullName', 'companyName', 'email', 'hasCompanion',
             'agentId', 'agentName', 'day', 'hour', 'masterclass',
             'status', 'emailStatus', 'ticketIds', 'createdAt'
           ])
-          && isFilledString(data.clientCode, 40)
+          // La CÉDULA debe corresponder a un cliente real de la base importada (bloquea a no-clientes).
+          && isFilledString(data.cedula, 30)
+          && data.cedula.matches('^[0-9]+$')
+          && exists(/databases/$(database)/documents/clients/$(data.cedula))
+          // Datos autocompletados desde el cliente (se validan tipo/longitud, no su valor exacto).
+          && isBoundedString(data.clientCode, 40)
+          && isFilledString(data.companyName, 160)
+          && isBoundedString(data.vendedor, 120)
           && isFilledString(data.fullName, 120)
-          && isFilledString(data.companyName, 140)
           && isFilledString(data.email, 160)
           && data.email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]{2,}$')
-          && isFilledString(data.agentName, 120)
-          && isFilledString(data.agentId, 64)
+          // Asesor: puede venir VACÍO (reserva «sin asesor», el admin lo asigna luego) o ser real.
+          && isBoundedString(data.agentName, 120)
+          && isBoundedString(data.agentId, 64)
+          && (data.agentId == '' || exists(/databases/$(database)/documents/agents/$(data.agentId)))
           && isFilledString(data.day, 10)
           && data.day.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$')
           && isFilledString(data.hour, 5)
@@ -216,13 +235,11 @@ service cloud.firestore {
           && data.ticketIds is list
           && data.ticketIds.size() == 0
           && data.createdAt == request.time
-          && (!has(data, 'phone') || isBoundedString(data.phone, 30))
           && (!has(data, 'rejectionReason') || data.rejectionReason == '')
           && (!has(data, 'emailError') || data.emailError == '')
           && (!has(data, 'emailSentAt') || data.emailSentAt == null)
           && (!has(data, 'approvedAt') || data.approvedAt == null)
-          && (!has(data, 'reviewedBy') || data.reviewedBy == null)
-          && exists(/databases/$(database)/documents/agents/$(data.agentId));
+          && (!has(data, 'reviewedBy') || data.reviewedBy == null);
       }
 
       allow create: if isValidNewReservation();

@@ -8,6 +8,7 @@ import {
   UtensilsCrossed,
   Users,
   UserCog,
+  Contact,
   Settings,
   Menu,
   X,
@@ -33,6 +34,7 @@ const NAV_ITEMS = [
   { to: '/admin/food', label: 'Comida', icon: UtensilsCrossed, roles: SCANNER },
   { to: '/admin/attendance', label: 'Asistencia', icon: UserCheck, roles: ALL },
   { to: '/admin/agents', label: 'Asesores', icon: Users, roles: SUPER },
+  { to: '/admin/clients', label: 'Clientes', icon: Contact, roles: SUPER },
   { to: '/admin/users', label: 'Usuarios', icon: UserCog, roles: SUPER },
   { to: '/admin/settings', label: 'Ajustes', icon: Settings, roles: SUPER },
 ]

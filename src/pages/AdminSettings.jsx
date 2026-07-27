@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react'
 
-import { Badge, Button, Card, EmptyState, Input, Modal, Spinner, useToast } from '../components/ui'
+import { Badge, Button, Card, EmptyState, Input, Modal, Select, Spinner, useToast } from '../components/ui'
 import { useAuth } from '../hooks/useAuth'
 import { useConfig } from '../hooks/useConfig'
 import { useReservations } from '../hooks/useReservations'
@@ -113,6 +113,7 @@ function pickEditable(config) {
       name: mc.name ?? '',
       startTime: mc.startTime ?? '',
       endTime: mc.endTime ?? '',
+      day: mc.day ?? '',
     })),
     days: (config.days || []).map((day) => ({
       id: day.id ?? '',
@@ -458,7 +459,7 @@ export default function AdminSettings() {
       ...current,
       masterclasses: [
         ...current.masterclasses,
-        { id: newMasterclassId(), name: '', startTime: '', endTime: '' },
+        { id: newMasterclassId(), name: '', startTime: '', endTime: '', day: '' },
       ],
     }))
   }
@@ -491,6 +492,7 @@ export default function AdminSettings() {
       name: clean(mc.name),
       startTime: clean(mc.startTime),
       endTime: clean(mc.endTime),
+      day: clean(mc.day),
     })),
     days: draft.days.map((day) => ({
       id: clean(day.id),
@@ -1036,6 +1038,9 @@ export default function AdminSettings() {
                 startTime: mc.startTime,
                 endTime: mc.endTime,
               })
+              const dayLabel = mc.day
+                ? draft.days.find((day) => day.id === mc.day)?.label || mc.day
+                : ''
 
               return (
                 <li
@@ -1043,7 +1048,7 @@ export default function AdminSettings() {
                   className="rounded-2xl bg-belen-cream/60 p-3 ring-1 ring-belen-blue/10"
                 >
                   <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
-                    <div className="xl:col-span-6">
+                    <div className="xl:col-span-4">
                       <Input
                         label="Nombre"
                         value={mc.name}
@@ -1051,6 +1056,23 @@ export default function AdminSettings() {
                         error={mcErrors.name}
                         placeholder="Empaque sostenible"
                       />
+                    </div>
+
+                    <div className="xl:col-span-3">
+                      <Select
+                        label="Día"
+                        value={mc.day}
+                        onChange={(event) => setMasterclass(index, { day: event.target.value })}
+                      >
+                        <option value="">Cualquier día</option>
+                        {draft.days.map((day, dayIndex) =>
+                          day.id ? (
+                            <option key={day.id || `mc-day-${dayIndex}`} value={day.id}>
+                              {day.label || day.id}
+                            </option>
+                          ) : null,
+                        )}
+                      </Select>
                     </div>
 
                     <div className="xl:col-span-2">
@@ -1075,7 +1097,7 @@ export default function AdminSettings() {
                       />
                     </div>
 
-                    <div className="flex items-end justify-end xl:col-span-2">
+                    <div className="flex items-end justify-end xl:col-span-1">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1087,10 +1109,20 @@ export default function AdminSettings() {
                     </div>
                   </div>
 
-                  {preview && (
+                  {(preview || dayLabel) && (
                     <p className="mt-2 text-xs text-slate-500">
-                      Vista previa:{' '}
-                      <span className="font-semibold text-belen-blue">{preview}</span>
+                      {preview && (
+                        <>
+                          Vista previa:{' '}
+                          <span className="font-semibold text-belen-blue">{preview}</span>
+                        </>
+                      )}
+                      {preview && dayLabel && <span className="mx-1.5 text-slate-300">·</span>}
+                      {dayLabel && (
+                        <>
+                          Día: <span className="font-semibold text-belen-blue">{dayLabel}</span>
+                        </>
+                      )}
                     </p>
                   )}
                 </li>

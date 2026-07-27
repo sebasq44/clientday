@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react'
 
-import { Badge, Button, Card, EmptyState, Input, Modal, Spinner, useToast } from '../components/ui'
+import { Badge, Button, Card, EmptyState, Input, Modal, Select, Spinner, useToast } from '../components/ui'
 import { useAgents } from '../hooks/useAgents'
 import { useReservations } from '../hooks/useReservations'
 import {
@@ -129,6 +129,8 @@ export default function AdminAgents() {
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState('')
   const [deactivating, setDeactivating] = useState(false)
+  // Asesor destino al que se migran las reservas cuando el que se elimina tiene alguna.
+  const [migrateToAgentId, setMigrateToAgentId] = useState('')
 
   // --- Interruptor activo/inactivo ---
   const [togglingId, setTogglingId] = useState(null)
@@ -322,24 +324,47 @@ export default function AdminAgents() {
   const openDelete = (agent) => {
     setDeleteTarget(agent)
     setDeleteError('')
+    setMigrateToAgentId('')
   }
 
   const closeDelete = () => {
     if (deleting || deactivating) return
     setDeleteTarget(null)
     setDeleteError('')
+    setMigrateToAgentId('')
   }
 
   const handleDelete = async () => {
     if (!deleteTarget) return
+
+    // Contamos las reservas asignadas: si tiene alguna, hay que migrarlas antes de borrar.
+    const count = reservations.filter((r) => r.agentId === deleteTarget.id).length
+    const needsMigration = count > 0
+
+    // El botón queda deshabilitado sin destino, pero validamos por si acaso.
+    if (needsMigration && !migrateToAgentId) {
+      setDeleteError('Elige a qué asesor migrar las reservas antes de eliminarlo.')
+      return
+    }
+
+    const targetAgent = needsMigration ? agents.find((a) => a.id === migrateToAgentId) : null
+
     setDeleting(true)
     setDeleteError('')
     try {
-      await deleteAgent(deleteTarget.id)
-      toast.success(`${deleteTarget.name} se eliminó de la lista de asesores.`)
+      await deleteAgent(deleteTarget.id, needsMigration ? { migrateToAgentId } : undefined)
+      if (needsMigration) {
+        toast.success(
+          `${deleteTarget.name} se eliminó y ${count} ${
+            count === 1 ? 'reserva se migró' : 'reservas se migraron'
+          } a ${targetAgent?.name || 'otro asesor'}.`,
+        )
+      } else {
+        toast.success(`${deleteTarget.name} se eliminó de la lista de asesores.`)
+      }
       setDeleteTarget(null)
+      setMigrateToAgentId('')
     } catch (err) {
-      // El caso típico: el agente tiene reservas aprobadas y no se puede borrar.
       setDeleteError(err.message)
       toast.error(err.message)
     } finally {
@@ -355,6 +380,7 @@ export default function AdminAgents() {
       toast.success(`${deleteTarget.name} quedó inactivo y conserva su historial.`)
       setDeleteTarget(null)
       setDeleteError('')
+      setMigrateToAgentId('')
     } catch (err) {
       toast.error(err.message)
     } finally {
@@ -442,6 +468,16 @@ export default function AdminAgents() {
   // ---------------------------------------------------------------- Render
 
   const photoKb = form.photoBase64 ? dataUrlKb(form.photoBase64) : 0
+
+  // Reservas asignadas al asesor que se va a eliminar y asesores activos a los que se puede migrar.
+  const deleteReservationsCount = deleteTarget
+    ? reservations.filter((r) => r.agentId === deleteTarget.id).length
+    : 0
+  const deleteHasReservations = deleteReservationsCount > 0
+  const migrationTargets = deleteTarget
+    ? agents.filter((a) => a.active && a.id !== deleteTarget.id)
+    : []
+  const canMigrate = migrationTargets.length > 0
 
   return (
     <div className="space-y-5">
@@ -883,26 +919,25 @@ export default function AdminAgents() {
               Cancelar
             </Button>
 
-            {deleteError ? (
-              <Button
-                variant="secondary"
-                loading={deactivating}
-                disabled={deleting}
-                onClick={handleDeactivateInstead}
-              >
-                Desactivar en su lugar
-              </Button>
-            ) : (
-              <Button
-                variant="danger"
-                icon={Trash2}
-                loading={deleting}
-                disabled={deactivating}
-                onClick={handleDelete}
-              >
-                Eliminar
-              </Button>
-            )}
+            {/* Opción secundaria: conservar el historial desactivando en lugar de eliminar. */}
+            <Button
+              variant="secondary"
+              loading={deactivating}
+              disabled={deleting}
+              onClick={handleDeactivateInstead}
+            >
+              Desactivar en su lugar
+            </Button>
+
+            <Button
+              variant="danger"
+              icon={Trash2}
+              loading={deleting}
+              disabled={deactivating || (deleteHasReservations && !migrateToAgentId)}
+              onClick={handleDelete}
+            >
+              Eliminar
+            </Button>
           </>
         }
       >
@@ -920,20 +955,72 @@ export default function AdminAgents() {
               </div>
             </div>
 
-            {deleteError ? (
-              <div className="flex gap-3 rounded-xl bg-red-50 p-3 ring-1 ring-red-200">
-                <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-600" aria-hidden="true" />
-                <div className="min-w-0 text-sm text-red-700">
-                  <p className="font-semibold">No se puede eliminar</p>
-                  <p className="mt-1 leading-snug">{deleteError}</p>
+            {deleteHasReservations ? (
+              canMigrate ? (
+                <div className="space-y-3">
+                  <div className="flex gap-3 rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200">
+                    <TriangleAlert
+                      className="mt-0.5 h-5 w-5 shrink-0 text-amber-600"
+                      aria-hidden="true"
+                    />
+                    <p className="min-w-0 text-sm leading-snug text-amber-800">
+                      Este asesor tiene{' '}
+                      <strong>
+                        {deleteReservationsCount}{' '}
+                        {deleteReservationsCount === 1 ? 'reserva' : 'reservas'}
+                      </strong>{' '}
+                      asignada{deleteReservationsCount === 1 ? '' : 's'}. Para eliminarlo, elige a
+                      qué asesor migrarlas.
+                    </p>
+                  </div>
+
+                  <Select
+                    label="Migrar las reservas a"
+                    required
+                    value={migrateToAgentId}
+                    onChange={(event) => setMigrateToAgentId(event.target.value)}
+                    disabled={deleting || deactivating}
+                  >
+                    <option value="">Selecciona un asesor…</option>
+                    {migrationTargets.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </Select>
                 </div>
-              </div>
+              ) : (
+                <div className="flex gap-3 rounded-xl bg-amber-50 p-3 ring-1 ring-amber-200">
+                  <TriangleAlert
+                    className="mt-0.5 h-5 w-5 shrink-0 text-amber-600"
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0 text-sm text-amber-800">
+                    <p className="font-semibold">No hay otro asesor activo</p>
+                    <p className="mt-1 leading-snug">
+                      Este asesor tiene {deleteReservationsCount}{' '}
+                      {deleteReservationsCount === 1 ? 'reserva' : 'reservas'} y no hay otro asesor
+                      activo al cual migrarlas. Activa otro asesor o desactiva este para conservar su
+                      historial.
+                    </p>
+                  </div>
+                </div>
+              )
             ) : (
               <p className="text-sm leading-relaxed text-slate-600">
                 ¿Seguro que quieres eliminar a <strong>{deleteTarget.name}</strong>? Esta acción no se
-                puede deshacer. Si el asesor ya tiene citas aprobadas, deberás desactivarlo en lugar
-                de eliminarlo.
+                puede deshacer.
               </p>
+            )}
+
+            {deleteError && (
+              <div className="flex gap-3 rounded-xl bg-red-50 p-3 ring-1 ring-red-200">
+                <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-600" aria-hidden="true" />
+                <div className="min-w-0 text-sm text-red-700">
+                  <p className="font-semibold">No se pudo eliminar</p>
+                  <p className="mt-1 leading-snug">{deleteError}</p>
+                </div>
+              </div>
             )}
           </div>
         )}

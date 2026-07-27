@@ -13,8 +13,9 @@ import {
   where,
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { COL, RESERVATION_STATUS } from '../lib/constants'
+import { COL } from '../lib/constants'
 import { clean, isValidEmail } from '../lib/format'
+import { migrateReservationsToAgent } from './reservationsService'
 
 /**
  * CRUD de agentes de venta + compresión de la foto a dataURL base64 (<=200 KB).
@@ -196,30 +197,42 @@ export async function updateAgent(id, patch) {
  * trazabilidad de las entradas ya emitidas, así que se pide desactivarlo en su lugar.
  * Con reservas solo pendientes/rechazadas sí se permite el borrado.
  */
-export async function deleteAgent(id) {
+export async function deleteAgent(id, options = {}) {
   const agentId = clean(id)
   if (!agentId) throw new Error('No encontramos el asesor que quieres eliminar.')
 
-  let approvedSnap
+  const migrateToAgentId = clean(options.migrateToAgentId)
+
+  // ¿Tiene reservas (de cualquier estado) asignadas?
+  let hasReservations = false
   try {
-    approvedSnap = await getDocs(
-      query(
-        collection(db, COL.RESERVATIONS),
-        where('agentId', '==', agentId),
-        where('status', '==', RESERVATION_STATUS.APPROVED),
-        limit(1),
-      ),
+    const snap = await getDocs(
+      query(collection(db, COL.RESERVATIONS), where('agentId', '==', agentId), limit(1)),
     )
+    hasReservations = !snap.empty
   } catch (err) {
     console.error('[agentsService] deleteAgent (check)', err)
-    throw new Error('No se pudo verificar si el asesor tiene reservas aprobadas. Inténtalo de nuevo.')
+    throw new Error('No se pudo verificar si el asesor tiene reservas. Inténtalo de nuevo.')
   }
 
-  if (!approvedSnap.empty) {
-    throw new Error(
-      'No puedes eliminar este asesor porque tiene reservas aprobadas con entradas ya emitidas. ' +
-        'Desactívalo para que deje de aparecer en el formulario público y conserve su historial.',
-    )
+  // Con reservas, hay que migrarlas a otro asesor antes de borrar (el admin elige a cuál).
+  if (hasReservations) {
+    if (!migrateToAgentId) {
+      throw new Error(
+        'Este asesor tiene reservas asignadas. Elige a qué asesor migrarlas antes de eliminarlo.',
+      )
+    }
+    if (migrateToAgentId === agentId) {
+      throw new Error('El asesor destino debe ser distinto del que vas a eliminar.')
+    }
+    try {
+      await migrateReservationsToAgent(agentId, migrateToAgentId)
+    } catch (err) {
+      console.error('[agentsService] deleteAgent (migrate)', err)
+      throw new Error(
+        err?.message || 'No se pudieron migrar las reservas al otro asesor. Inténtalo de nuevo.',
+      )
+    }
   }
 
   try {

@@ -2,6 +2,7 @@
 export const COL = {
   CONFIG: 'config',
   AGENTS: 'agents',
+  CLIENTS: 'clients', // base de clientes importada del Excel (búsqueda por cédula)
   RESERVATIONS: 'reservations',
   SLOTS: 'slots',
   TICKETS: 'tickets',

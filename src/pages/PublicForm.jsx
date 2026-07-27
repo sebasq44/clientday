@@ -2,19 +2,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   AlertTriangle,
+  BadgeCheck,
+  Building2,
   CalendarDays,
   Check,
   Clock,
+  Fingerprint,
   GraduationCap,
+  Hash,
+  Loader2,
   Lock,
   Mail,
   RefreshCw,
   Ticket,
+  UserCheck,
   UserPlus,
-  Users,
 } from 'lucide-react'
 
-import Logo from '../components/Logo'
 import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import { useToast } from '../components/ui/Toast'
@@ -23,25 +27,31 @@ import { useAgents } from '../hooks/useAgents'
 import { useConfig } from '../hooks/useConfig'
 
 import { createReservation } from '../services/reservationsService'
+import { lookupClientByCedula } from '../services/clientsService'
 import { getOccupiedSlots, subscribeOccupiedSlots } from '../services/availabilityService'
 
 import { ERRORS, slotId } from '../lib/constants'
 import { celebrateReservation } from '../lib/celebrate'
-import { clean, dayLabel, dayLetter, formatHourRange, formatMasterclass, isValidEmail } from '../lib/format'
+import {
+  clean,
+  dayLabel,
+  dayLetter,
+  formatHourRange,
+  formatMasterclass,
+  isValidEmail,
+  normalizeName,
+  onlyDigits,
+} from '../lib/format'
+
+import edificioImg from '../assets/edificio.webp'
+import logoImg from '../assets/logo.webp'
 
 /* ------------------------------------------------------------------------------------------------
  * Estilos locales de la página
- * - `belen-logo-invert` / `belen-logo-white`: el SVG de <Logo> lleva los colores como atributos de
- *   presentación, y una regla CSS gana siempre a un atributo de presentación. Así el logo se lee en
- *   blanco sobre el azul de la cabecera sin tocar components/Logo.jsx (es de otro agente).
- * - El resto son las animaciones de la pantalla de confirmación (se anulan si el sistema pide
+ * - Animaciones de la pantalla de confirmación y del formulario (se anulan si el sistema pide
  *   movimiento reducido).
  * ---------------------------------------------------------------------------------------------- */
 const PAGE_STYLES = `
-  .belen-logo-invert text { fill: #ffffff; }
-  .belen-logo-invert path[stroke='#1B3B8B'] { stroke: #ffffff; }
-  .belen-logo-white path { stroke: #ffffff; }
-
   @keyframes belen-pop {
     0%   { opacity: 0; transform: scale(0.4); }
     60%  { opacity: 1; transform: scale(1.08); }
@@ -74,19 +84,16 @@ const PAGE_STYLES = `
   }
 `
 
-/** El lema ya viene dibujado dentro del SVG de <Logo variant="full">. */
-const LOGO_TAGLINE = 'Conexiones que impulsan'
+/** Lema de la marca (respaldo si el admin no configuró uno propio). */
+const BRAND_TAGLINE = 'Conexiones que impulsan'
 
-/** Orden de los campos: define a cuál se hace scroll cuando la validación falla. */
+/** Orden de los campos: define a cuál se hace scroll cuando la validación falla. La cédula va primero. */
 const FIELD_ORDER = [
-  'clientCode',
-  'fullName',
-  'companyName',
+  'cedula',
   'email',
-  'phone',
+  'fullName',
   'hasCompanion',
   'companionName',
-  'agentId',
   'day',
   'hour',
   'masterclass',
@@ -94,21 +101,18 @@ const FIELD_ORDER = [
 ]
 
 const EMPTY_FORM = {
-  clientCode: '',
-  fullName: '',
-  companyName: '',
+  cedula: '',
   email: '',
-  phone: '',
+  fullName: '',
   hasCompanion: null,
   companionName: '',
-  agentId: '',
   day: '',
   hour: '',
   masterclass: null,
   masterclassId: '',
 }
 
-/** Iniciales para el avatar de respaldo cuando el agente no tiene foto. */
+/** Iniciales para el avatar de respaldo cuando el asesor no tiene foto. */
 function initials(name) {
   const parts = clean(name).split(' ').filter(Boolean)
   if (parts.length === 0) return '?'
@@ -184,56 +188,68 @@ function YesNoCards({ value, onChange, invalid = false, yesLabel = 'Sí', noLabe
   )
 }
 
-function AgentCard({ agent, selected, onSelect }) {
+/** Dato de solo lectura (empresa / código): icono, etiqueta y valor. */
+function ReadOnlyField({ icon: Icon, label, value }) {
   return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      onClick={() => onSelect(agent.id)}
-      className={[
-        // `overflow-hidden` es lo que recorta el destello (.belen-shine) al contorno de la tarjeta.
-        'group relative flex flex-col items-center gap-2 overflow-hidden rounded-2xl bg-white p-3 text-center',
-        'transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-belen-orange focus-visible:ring-offset-2',
-        selected
-          ? 'belen-shine belen-glow scale-[1.03] shadow-card ring-2 ring-belen-orange'
-          : 'ring-1 ring-belen-blue/15 hover:-translate-y-0.5 hover:shadow-card hover:ring-belen-blue/40',
-      ].join(' ')}
-    >
-      {selected && (
-        <span className="belen-pop absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full bg-belen-orange text-white shadow-sm">
-          <Check className="h-3 w-3" aria-hidden="true" />
-        </span>
-      )}
-
-      {agent.photoBase64 ? (
-        <img
-          src={agent.photoBase64}
-          alt=""
-          className={[
-            'h-16 w-16 rounded-full object-cover shadow-sm transition-all duration-300 sm:h-20 sm:w-20',
-            selected ? 'ring-4 ring-belen-orange/60' : 'ring-2 ring-white group-hover:ring-belen-blue/20',
-          ].join(' ')}
-        />
-      ) : (
-        <span
-          className={[
-            'flex h-16 w-16 items-center justify-center rounded-full bg-belen-blue text-lg font-bold text-white transition-all duration-300 sm:h-20 sm:w-20',
-            selected ? 'ring-4 ring-belen-orange/60' : 'ring-2 ring-white',
-          ].join(' ')}
-        >
-          {initials(agent.name)}
-        </span>
-      )}
-
-      <span
-        className={[
-          'line-clamp-2 text-xs font-semibold leading-tight transition-colors sm:text-sm',
-          selected ? 'text-belen-orange-dark' : 'text-belen-ink',
-        ].join(' ')}
-      >
-        {agent.name}
+    <div className="flex items-center gap-2.5 rounded-xl bg-white p-3 ring-1 ring-belen-blue/10">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-belen-blue/10">
+        <Icon className="h-4 w-4 text-belen-blue" aria-hidden="true" />
       </span>
-    </button>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+        <p className="truncate text-sm font-bold text-belen-ink">{value || '—'}</p>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Tarjeta de SOLO LECTURA con lo que se autocompleta desde la cédula: empresa, código y asesor.
+ * Reutiliza la estética de las tarjetas de asesor (foto/iniciales) pero NO es seleccionable.
+ */
+function ClientCard({ client, agent }) {
+  const matched = Boolean(agent)
+  const advisorName = agent?.name || client.vendedor
+  return (
+    <div className="belen-fade-up mt-4 rounded-2xl bg-belen-cream p-4 ring-1 ring-belen-blue/10">
+      <p className="mb-3 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-belen-blue/60">
+        <BadgeCheck className="h-4 w-4 text-emerald-600" aria-hidden="true" />
+        Cliente verificado
+      </p>
+
+      <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <ReadOnlyField icon={Building2} label="Empresa" value={client.nombre} />
+        <ReadOnlyField icon={Hash} label="Código de cliente" value={client.codigo} />
+      </dl>
+
+      <div className="mt-3 flex items-center gap-3 rounded-xl bg-white p-3 ring-1 ring-belen-blue/10">
+        {agent?.photoBase64 ? (
+          <img
+            src={agent.photoBase64}
+            alt=""
+            className="h-12 w-12 shrink-0 rounded-full object-cover shadow-sm ring-2 ring-white"
+          />
+        ) : (
+          <span
+            className={[
+              'flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white',
+              matched ? 'bg-belen-blue' : 'bg-slate-400',
+            ].join(' ')}
+          >
+            {advisorName ? initials(advisorName) : <UserCheck className="h-5 w-5" aria-hidden="true" />}
+          </span>
+        )}
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Asesor asignado
+          </p>
+          <p className="truncate text-sm font-bold text-belen-ink">{advisorName || '—'}</p>
+          {!matched && (
+            <p className="mt-0.5 text-xs text-slate-400">Se te asignará un asesor.</p>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -353,36 +369,47 @@ function Divider() {
 
 function Header({ config }) {
   const enabledDays = (config?.days || []).filter((day) => day.enabled !== false)
-  const tagline = clean(config?.tagline)
-  // El lema por defecto ya está dibujado dentro del logo: solo lo repetimos si el admin lo cambió.
-  const showTagline = Boolean(tagline) && tagline !== LOGO_TAGLINE
+  const eventName = clean(config?.eventName) || 'Día del Cliente'
+  const tagline = clean(config?.tagline) || BRAND_TAGLINE
 
   return (
-    <header className="relative overflow-hidden bg-belen-blue pb-20 pt-10 sm:pb-24 sm:pt-14">
-      {/* Marca de agua: el isotipo, muy tenue */}
-      <Logo
-        variant="mark"
-        aria-hidden="true"
-        className="belen-logo-white belen-float pointer-events-none absolute -right-16 -top-10 h-56 w-auto opacity-[0.07] sm:-right-10 sm:h-72"
-      />
-      <Logo
-        variant="mark"
-        aria-hidden="true"
-        className="belen-logo-white belen-float belen-delay-3 pointer-events-none absolute -bottom-16 -left-20 h-56 w-auto opacity-[0.05] sm:h-64"
-      />
+    <header className="relative overflow-hidden pb-20 pt-10 sm:pb-24 sm:pt-14">
+      {/* Fondo: fotografía del edificio */}
       <div
         aria-hidden="true"
-        className="belen-glow pointer-events-none absolute inset-x-0 -top-24 mx-auto h-56 w-56 rounded-full bg-belen-orange/20 blur-3xl"
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: `url(${edificioImg})` }}
+      />
+      {/* Degradado azul de la marca que desvanece la foto para que el texto blanco se lea */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-gradient-to-b from-belen-blue/95 via-belen-blue/85 to-belen-blue/75"
+      />
+      {/* Destello naranja tenue */}
+      <div
+        aria-hidden="true"
+        className="belen-glow pointer-events-none absolute inset-x-0 -top-24 mx-auto h-56 w-56 rounded-full bg-belen-orange/25 blur-3xl"
       />
 
       <div className="relative mx-auto flex max-w-2xl flex-col items-center px-4 text-center">
-        <Logo variant="full" className="belen-logo-invert belen-fade-up h-36 w-auto sm:h-44" />
+        {/* Logo «EMPAQUES belén» sobre una tarjeta blanca para máximo contraste */}
+        <div className="belen-fade-up inline-flex items-center justify-center rounded-2xl bg-white px-6 py-4 shadow-card ring-1 ring-white/60">
+          <img
+            src={logoImg}
+            alt="Empaques Belén"
+            className="h-14 w-auto sm:h-16"
+            width="200"
+            height="64"
+          />
+        </div>
 
-        {showTagline && (
-          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.25em] text-belen-orange-light">
-            {tagline}
-          </p>
-        )}
+        <h1 className="belen-fade-up belen-delay-1 mt-6 text-2xl font-extrabold uppercase tracking-wide text-white sm:text-3xl">
+          {eventName} {config?.eventYear || ''}
+        </h1>
+
+        <p className="belen-fade-up belen-delay-1 mt-2 text-xs font-semibold uppercase tracking-[0.25em] text-belen-orange-light">
+          {tagline}
+        </p>
 
         {enabledDays.length > 0 && (
           <div className="mt-6 flex flex-wrap justify-center gap-2">
@@ -401,8 +428,8 @@ function Header({ config }) {
         )}
 
         <p className="mt-5 max-w-md text-sm leading-relaxed text-white/75">
-          Reserva tu cita con el asesor comercial que te acompañará durante el evento. Elige día y
-          hora, y te enviaremos tu entrada por correo al confirmarla.
+          Reserva tu cita en pocos pasos: digita tu cédula y autocompletamos tu empresa y tu asesor.
+          Elige día y hora, y te enviaremos tu entrada por correo al confirmarla.
         </p>
       </div>
     </header>
@@ -561,15 +588,23 @@ function SuccessPanel({ data, onReset }) {
               className="h-14 w-14 shrink-0 rounded-full object-cover ring-2 ring-white shadow-sm"
             />
           ) : (
-            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-belen-blue text-base font-bold text-white">
-              {initials(data.agentName)}
+            <span
+              className={[
+                'flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-base font-bold text-white',
+                data.agentAssigned ? 'bg-belen-blue' : 'bg-slate-400',
+              ].join(' ')}
+            >
+              {data.agentName ? initials(data.agentName) : <UserCheck className="h-6 w-6" aria-hidden="true" />}
             </span>
           )}
           <div className="min-w-0">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
               Tu asesor
             </p>
-            <p className="truncate text-sm font-bold text-belen-ink">{data.agentName}</p>
+            <p className="truncate text-sm font-bold text-belen-ink">{data.agentName || 'Por asignar'}</p>
+            {!data.agentAssigned && (
+              <p className="text-xs text-slate-400">Se te asignará un asesor.</p>
+            )}
           </div>
         </div>
 
@@ -600,15 +635,27 @@ function SuccessPanel({ data, onReset }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5 rounded-xl bg-white p-3 ring-1 ring-belen-blue/10 sm:col-span-2">
+          <div className="flex items-center gap-2.5 rounded-xl bg-white p-3 ring-1 ring-belen-blue/10">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-belen-blue/10">
-              <Users className="h-4 w-4 text-belen-blue" aria-hidden="true" />
+              <Building2 className="h-4 w-4 text-belen-blue" aria-hidden="true" />
             </span>
             <div className="min-w-0">
               <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Empresa
               </dt>
               <dd className="truncate text-sm font-bold text-belen-ink">{data.companyName}</dd>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 rounded-xl bg-white p-3 ring-1 ring-belen-blue/10">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-belen-blue/10">
+              <Hash className="h-4 w-4 text-belen-blue" aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <dt className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Código de cliente
+              </dt>
+              <dd className="truncate text-sm font-bold text-belen-ink">{data.clientCode || '—'}</dd>
             </div>
           </div>
 
@@ -670,7 +717,7 @@ function SuccessPanel({ data, onReset }) {
 export default function PublicForm() {
   const toast = useToast()
   const { config, loading: configLoading, error: configError } = useConfig()
-  const { agents, loading: agentsLoading, error: agentsError } = useAgents()
+  const { agents, loading: agentsLoading } = useAgents()
 
   const [form, setForm] = useState(EMPTY_FORM)
   const [errors, setErrors] = useState({})
@@ -678,8 +725,14 @@ export default function PublicForm() {
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(null)
 
+  // Cliente resuelto a partir de la cédula (empresa/código/vendedor) + estado de la búsqueda.
+  const [clientData, setClientData] = useState(null)
+  const [lookupStatus, setLookupStatus] = useState('idle') // idle | loading | found | notfound | error
+
   const fieldRefs = useRef({})
   const previousSelection = useRef({ agentId: '', day: '' })
+  // Evita búsquedas duplicadas/obsoletas: guarda la última cédula consultada y un contador de orden.
+  const lookupRef = useRef({ cedula: null, seq: 0 })
 
   // Al confirmar la reserva: confeti con los colores de la marca. La propia función
   // respeta «prefers-reduced-motion», así que no molesta a quien pidió menos animación.
@@ -712,7 +765,6 @@ export default function PublicForm() {
   }, [])
 
   // --- Datos derivados de la configuración ------------------------------------------------------
-  const activeAgents = useMemo(() => agents.filter((agent) => agent.active === true), [agents])
   const enabledDays = useMemo(
     () => (config?.days || []).filter((day) => day.enabled !== false),
     [config],
@@ -723,31 +775,79 @@ export default function PublicForm() {
     [config],
   )
 
+  // Masterclasses visibles según el día elegido: las de ESE día más las sin día asignado.
+  const visibleMasterclasses = useMemo(
+    () => masterclasses.filter((mc) => !mc.day || mc.day === form.day),
+    [masterclasses, form.day],
+  )
+
   const allowCompanion = config?.allowCompanion !== false
   const masterclassEnabled = config?.masterclassEnabled !== false
 
-  const selectedAgent = useMemo(
-    () => activeAgents.find((agent) => agent.id === form.agentId) || null,
-    [activeAgents, form.agentId],
-  )
+  // Asesor emparejado: el «vendedor» del cliente contra un asesor ACTIVO, comparando nombres.
+  const matchedAgent = useMemo(() => {
+    if (!clientData?.vendedor) return null
+    return (
+      agents.find(
+        (a) => a.active !== false && normalizeName(a.name) === normalizeName(clientData.vendedor),
+      ) || null
+    )
+  }, [agents, clientData])
 
-  const canPickHour = Boolean(form.agentId && form.day)
+  const matchedAgentId = matchedAgent?.id || ''
+
+  // Se puede elegir hora cuando ya hay cliente resuelto y día. Sin asesor emparejado no hay
+  // ocupación que calcular: se muestran todas las horas (el horario se confirma al asignar asesor).
+  const canPickHour = Boolean(clientData && form.day)
 
   const isHourOccupied = useCallback(
-    (hour) => canPickHour && occupied.has(slotId(form.day, hour, form.agentId)),
-    [canPickHour, occupied, form.day, form.agentId],
+    (hour) => Boolean(matchedAgentId && form.day) && occupied.has(slotId(form.day, hour, matchedAgentId)),
+    [matchedAgentId, form.day, occupied],
   )
 
-  // --- Coherencia de la selección con lo que llega en vivo ---------------------------------------
+  // --- Búsqueda del cliente por cédula ----------------------------------------------------------
+  const runLookup = useCallback(async (rawCedula) => {
+    const id = onlyDigits(rawCedula)
+    if (id.length < 8) return
+    // Ya está resuelta / en curso para esta misma cédula: no repetimos la consulta.
+    if (lookupRef.current.cedula === id) return
+    lookupRef.current.cedula = id
+    const seq = ++lookupRef.current.seq
+    setLookupStatus('loading')
 
-  // El agente elegido se desactivó o se borró.
+    try {
+      const client = await lookupClientByCedula(id)
+      if (seq !== lookupRef.current.seq) return // llegó una respuesta obsoleta
+      if (client) {
+        setClientData(client)
+        setLookupStatus('found')
+        setErrors((current) => {
+          if (!current.cedula) return current
+          const nextErrors = { ...current }
+          delete nextErrors.cedula
+          return nextErrors
+        })
+      } else {
+        setClientData(null)
+        setLookupStatus('notfound')
+      }
+    } catch (error) {
+      console.error('[PublicForm] lookupClientByCedula', error)
+      if (seq !== lookupRef.current.seq) return
+      setClientData(null)
+      setLookupStatus('error')
+    }
+  }, [])
+
+  // Debounce: en cuanto la cédula tenga 8+ dígitos, la buscamos ~500 ms después de dejar de escribir.
   useEffect(() => {
-    if (success || agentsLoading || !form.agentId) return
-    if (activeAgents.some((agent) => agent.id === form.agentId)) return
+    const id = onlyDigits(form.cedula)
+    if (id.length < 8) return
+    const timer = setTimeout(() => runLookup(id), 500)
+    return () => clearTimeout(timer)
+  }, [form.cedula, runLookup])
 
-    setForm((current) => ({ ...current, agentId: '', hour: '' }))
-    toast.info('El asesor que habías elegido ya no está disponible. Elige otro, por favor.')
-  }, [activeAgents, agentsLoading, form.agentId, success, toast])
+  // --- Coherencia de la selección con lo que llega en vivo ---------------------------------------
 
   // El día o la hora dejaron de existir en la configuración.
   useEffect(() => {
@@ -767,7 +867,8 @@ export default function PublicForm() {
 
   // La hora elegida se ocupó (por otra reserva aprobada) mientras el cliente rellenaba el formulario.
   useEffect(() => {
-    const { agentId, day, hour } = form
+    const agentId = matchedAgentId
+    const { day, hour } = form
     const changedSelection =
       previousSelection.current.agentId !== agentId || previousSelection.current.day !== day
     previousSelection.current = { agentId, day }
@@ -780,7 +881,14 @@ export default function PublicForm() {
     if (!changedSelection) {
       toast.error('La hora que habías elegido acaba de ocuparse. Por favor elige otra.')
     }
-  }, [occupied, form, success, toast])
+  }, [occupied, form, matchedAgentId, success, toast])
+
+  // Si cambia el día y la masterclass elegida ya no pertenece al nuevo día, la limpiamos.
+  useEffect(() => {
+    if (success || !form.masterclassId) return
+    if (visibleMasterclasses.some((mc) => mc.id === form.masterclassId)) return
+    setForm((current) => ({ ...current, masterclassId: '' }))
+  }, [visibleMasterclasses, form.masterclassId, success])
 
   // --- Escritura en el formulario ---------------------------------------------------------------
   const setField = useCallback((name, value) => {
@@ -798,6 +906,23 @@ export default function PublicForm() {
     [setField],
   )
 
+  // La cédula solo admite dígitos; cualquier cambio invalida el cliente resuelto y reinicia la búsqueda.
+  const handleCedulaChange = useCallback(
+    (event) => {
+      const digits = onlyDigits(event.target.value).slice(0, 20)
+      lookupRef.current.cedula = null // permite volver a buscar aunque repita un valor
+      setClientData(null)
+      setLookupStatus(digits.length >= 8 ? 'loading' : 'idle')
+      setField('cedula', digits)
+    },
+    [setField],
+  )
+
+  // Al salir del campo buscamos ya (sin esperar el debounce), si aún no está resuelta.
+  const handleCedulaBlur = useCallback(() => {
+    runLookup(form.cedula)
+  }, [runLookup, form.cedula])
+
   const handleCompanionChoice = useCallback(
     (value) => {
       setField('hasCompanion', value)
@@ -814,11 +939,6 @@ export default function PublicForm() {
     [setField],
   )
 
-  const handleAgentSelect = useCallback(
-    (agentId) => setField('agentId', agentId === form.agentId ? '' : agentId),
-    [setField, form.agentId],
-  )
-
   const handleDaySelect = useCallback((dayId) => setField('day', dayId), [setField])
   const handleHourSelect = useCallback((hour) => setField('hour', hour), [setField])
 
@@ -833,18 +953,18 @@ export default function PublicForm() {
   const validate = useCallback(() => {
     const next = {}
 
-    if (!clean(form.clientCode)) next.clientCode = 'Escribe tu código de cliente.'
-    if (!clean(form.fullName)) next.fullName = 'Escribe tu nombre completo.'
-    if (!clean(form.companyName)) next.companyName = 'Escribe el nombre de tu empresa.'
+    if (!clientData) {
+      next.cedula =
+        lookupStatus === 'loading'
+          ? 'Espera un momento: estamos verificando tu cédula.'
+          : 'Digita la cédula con la que facturas para continuar.'
+    }
 
     const email = clean(form.email)
     if (!email) next.email = 'Escribe tu correo electrónico.'
     else if (!isValidEmail(email)) next.email = 'Ese correo no parece válido. Revísalo, por favor.'
 
-    const phone = clean(form.phone)
-    if (phone && !/^[\d\s+()-]{8,}$/.test(phone)) {
-      next.phone = 'Ese teléfono no parece válido (mínimo 8 dígitos).'
-    }
+    if (!clean(form.fullName)) next.fullName = 'Escribe el nombre de quien asiste.'
 
     if (allowCompanion) {
       if (form.hasCompanion === null) {
@@ -854,11 +974,10 @@ export default function PublicForm() {
       }
     }
 
-    if (!form.agentId) next.agentId = 'Elige al asesor comercial que te acompañará.'
     if (!form.day) next.day = 'Elige el día de tu cita.'
 
     if (!form.hour) next.hour = 'Elige la hora de tu cita.'
-    else if (form.agentId && form.day && occupied.has(slotId(form.day, form.hour, form.agentId))) {
+    else if (matchedAgentId && occupied.has(slotId(form.day, form.hour, matchedAgentId))) {
       next.hour = 'Esa hora acaba de ocuparse. Elige otra, por favor.'
     }
 
@@ -867,14 +986,23 @@ export default function PublicForm() {
     } else if (
       masterclassEnabled &&
       form.masterclass === true &&
-      masterclasses.length > 0 &&
+      visibleMasterclasses.length > 0 &&
       !form.masterclassId
     ) {
       next.masterclassId = 'Selecciona a cuál masterclass asistirás.'
     }
 
     return next
-  }, [form, occupied, allowCompanion, masterclassEnabled, masterclasses])
+  }, [
+    form,
+    clientData,
+    lookupStatus,
+    matchedAgentId,
+    occupied,
+    allowCompanion,
+    masterclassEnabled,
+    visibleMasterclasses,
+  ])
 
   const handleSubmit = useCallback(
     async (event) => {
@@ -893,14 +1021,16 @@ export default function PublicForm() {
 
       setSubmitting(true)
       try {
-        // Última comprobación antes de escribir: el slot pudo ocuparse mientras rellenaba.
-        const fresh = await refreshAvailability()
-        if (fresh && fresh.has(slotId(form.day, form.hour, form.agentId))) {
-          setForm((current) => ({ ...current, hour: '' }))
-          setErrors((current) => ({ ...current, hour: 'Elige otra hora disponible.' }))
-          toast.error(ERRORS.SLOT_TAKEN)
-          focusField('hour')
-          return
+        // Última comprobación antes de escribir (solo si hay asesor): el slot pudo ocuparse.
+        if (matchedAgentId) {
+          const fresh = await refreshAvailability()
+          if (fresh && fresh.has(slotId(form.day, form.hour, matchedAgentId))) {
+            setForm((current) => ({ ...current, hour: '' }))
+            setErrors((current) => ({ ...current, hour: 'Elige otra hora disponible.' }))
+            toast.error(ERRORS.SLOT_TAKEN)
+            focusField('hour')
+            return
+          }
         }
 
         const hasCompanion = allowCompanion && form.hasCompanion === true
@@ -910,15 +1040,13 @@ export default function PublicForm() {
           ? masterclasses.find((mc) => mc.id === masterclassId) || null
           : null
 
+        // El servicio deriva empresa, código y asesor desde la cédula: solo enviamos estos campos.
         await createReservation({
-          clientCode: form.clientCode,
-          fullName: form.fullName,
-          companyName: form.companyName,
+          cedula: form.cedula,
           email: form.email,
-          phone: form.phone,
+          fullName: form.fullName,
           hasCompanion,
           companionName: hasCompanion ? form.companionName : '',
-          agentId: form.agentId,
           day: form.day,
           hour: form.hour,
           masterclass,
@@ -928,10 +1056,12 @@ export default function PublicForm() {
         setSuccess({
           eventName: `${clean(config?.eventName) || 'Día del Cliente'} ${config?.eventYear || ''}`.trim(),
           fullName: clean(form.fullName),
-          companyName: clean(form.companyName),
+          companyName: clean(clientData?.nombre),
+          clientCode: clean(clientData?.codigo),
           email: clean(form.email).toLowerCase(),
-          agentName: selectedAgent?.name || '',
-          agentPhoto: selectedAgent?.photoBase64 || null,
+          agentAssigned: Boolean(matchedAgent),
+          agentName: matchedAgent?.name || clientData?.vendedor || '',
+          agentPhoto: matchedAgent?.photoBase64 || null,
           dayLabel: dayLabel(config, form.day),
           dayLetter: dayLetter(config, form.day),
           hour: form.hour,
@@ -959,11 +1089,13 @@ export default function PublicForm() {
       focusField,
       refreshAvailability,
       form,
+      matchedAgentId,
+      matchedAgent,
+      clientData,
       allowCompanion,
       masterclassEnabled,
       masterclasses,
       config,
-      selectedAgent,
     ],
   )
 
@@ -971,6 +1103,9 @@ export default function PublicForm() {
     setSuccess(null)
     setForm(EMPTY_FORM)
     setErrors({})
+    setClientData(null)
+    setLookupStatus('idle')
+    lookupRef.current = { cedula: null, seq: lookupRef.current.seq + 1 }
     previousSelection.current = { agentId: '', day: '' }
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [])
@@ -978,10 +1113,17 @@ export default function PublicForm() {
   // --- Contenido según el estado ----------------------------------------------------------------
   const loading = configLoading || agentsLoading
   const formClosed = Boolean(config) && config.formOpen === false
-  const noAgents = !agentsLoading && activeAgents.length === 0
   const noDays = Boolean(config) && enabledDays.length === 0
   const noHours = Boolean(config) && hours.length === 0
-  const scheduleUnavailable = noAgents || noDays || noHours
+  const scheduleUnavailable = noDays || noHours
+
+  // Mensaje que se muestra bajo el campo de cédula (búsqueda / no encontrada / error / validación).
+  const cedulaError =
+    lookupStatus === 'notfound'
+      ? 'No encontramos esa cédula en nuestra base de clientes. Verifícala o contacta a tu asesor.'
+      : lookupStatus === 'error'
+        ? 'No pudimos verificar tu cédula ahora. Revisa tu conexión e inténtalo de nuevo.'
+        : errors.cedula
 
   let content
   if (loading) {
@@ -995,10 +1137,6 @@ export default function PublicForm() {
         }
       />
     )
-  } else if (agentsError) {
-    // Un fallo al cargar los agentes NO debe disfrazarse de "no hay agentes": sin la lista no se
-    // puede reservar, así que mostramos un error real con opción de reintentar.
-    content = <ErrorPanel message={agentsError} />
   } else if (formClosed) {
     content = <ClosedPanel config={config} />
   } else if (success) {
@@ -1007,50 +1145,43 @@ export default function PublicForm() {
     content = (
       <CardShell>
         <form onSubmit={handleSubmit} noValidate className="space-y-7">
-          {/* ---------- 1-5. Datos del cliente ---------- */}
+          {/* ---------- 1. Cédula (autocompleta empresa, código y asesor) ---------- */}
+          <div ref={registerField('cedula')}>
+            <Input
+              label="Cédula con la que factura"
+              name="cedula"
+              required
+              value={form.cedula}
+              onChange={handleCedulaChange}
+              onBlur={handleCedulaBlur}
+              error={cedulaError}
+              hint={
+                clientData
+                  ? undefined
+                  : 'Con tu cédula autocompletamos tu empresa, tu código y tu asesor.'
+              }
+              placeholder="Ej. 3101123456"
+              autoComplete="off"
+              inputMode="numeric"
+              maxLength={20}
+            />
+
+            {lookupStatus === 'loading' && (
+              <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-belen-blue">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                Buscando en nuestra base de clientes…
+              </p>
+            )}
+
+            {clientData && lookupStatus === 'found' && (
+              <ClientCard client={clientData} agent={matchedAgent} />
+            )}
+          </div>
+
+          <Divider />
+
+          {/* ---------- 2-3. Correo y nombre de quien asiste ---------- */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div ref={registerField('clientCode')}>
-              <Input
-                label="Código de cliente"
-                name="clientCode"
-                required
-                value={form.clientCode}
-                onChange={handleInput}
-                error={errors.clientCode}
-                placeholder="Ej. C-1042"
-                autoComplete="off"
-                maxLength={40}
-              />
-            </div>
-
-            <div ref={registerField('fullName')}>
-              <Input
-                label="Nombre completo"
-                name="fullName"
-                required
-                value={form.fullName}
-                onChange={handleInput}
-                error={errors.fullName}
-                placeholder="Ej. Juan Pérez"
-                autoComplete="name"
-                maxLength={80}
-              />
-            </div>
-
-            <div ref={registerField('companyName')}>
-              <Input
-                label="Nombre de la empresa"
-                name="companyName"
-                required
-                value={form.companyName}
-                onChange={handleInput}
-                error={errors.companyName}
-                placeholder="Ej. ACME S.A."
-                autoComplete="organization"
-                maxLength={80}
-              />
-            </div>
-
             <div ref={registerField('email')}>
               <Input
                 label="Correo electrónico"
@@ -1068,26 +1199,22 @@ export default function PublicForm() {
               />
             </div>
 
-            <div ref={registerField('phone')} className="sm:col-span-2">
+            <div ref={registerField('fullName')}>
               <Input
-                label="Teléfono"
-                name="phone"
-                type="tel"
-                value={form.phone}
+                label="Nombre de quien asiste"
+                name="fullName"
+                required
+                value={form.fullName}
                 onChange={handleInput}
-                error={errors.phone}
-                hint="Opcional. Solo lo usamos si necesitamos contactarte por tu cita."
-                placeholder="8888 8888"
-                autoComplete="tel"
-                inputMode="tel"
-                maxLength={30}
+                error={errors.fullName}
+                placeholder="Ej. Juan Pérez"
+                autoComplete="name"
+                maxLength={80}
               />
             </div>
           </div>
 
-          <Divider />
-
-          {/* ---------- 6. Acompañante ---------- */}
+          {/* ---------- 4. Acompañante ---------- */}
           {allowCompanion && (
             <div ref={registerField('hasCompanion')}>
               <SectionTitle icon={UserPlus} required>
@@ -1131,37 +1258,7 @@ export default function PublicForm() {
             </div>
           )}
 
-          {/* ---------- 7. Agente de ventas ---------- */}
-          <div ref={registerField('agentId')}>
-            <SectionTitle
-              icon={Users}
-              required
-              hint="Te acompañará durante toda tu visita al evento."
-            >
-              Asesor comercial
-            </SectionTitle>
-
-            {noAgents ? (
-              <Notice>
-                Todavía no hay asesores comerciales disponibles para reservar. Vuelve a intentarlo
-                más tarde o contacta a tu asesor de Empaques Belén.
-              </Notice>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {activeAgents.map((agent) => (
-                  <AgentCard
-                    key={agent.id}
-                    agent={agent}
-                    selected={form.agentId === agent.id}
-                    onSelect={handleAgentSelect}
-                  />
-                ))}
-              </div>
-            )}
-            <FieldError message={errors.agentId} />
-          </div>
-
-          {/* ---------- 8. Día ---------- */}
+          {/* ---------- 5. Día ---------- */}
           <div ref={registerField('day')}>
             <SectionTitle icon={CalendarDays} required>
               Día
@@ -1184,25 +1281,43 @@ export default function PublicForm() {
             <FieldError message={errors.day} />
           </div>
 
-          {/* ---------- 9. Hora ---------- */}
+          {/* ---------- 6. Hora ---------- */}
           <div ref={registerField('hour')}>
             <SectionTitle
               icon={Clock}
               required
               hint={
-                canPickHour
-                  ? `Disponibilidad en vivo para ${selectedAgent?.name || 'tu asesor'}. Cada cita dura 30 minutos.`
+                canPickHour && matchedAgent
+                  ? `Disponibilidad en vivo para ${matchedAgent.name}. Cada cita dura 30 minutos.`
                   : undefined
               }
             >
               Hora
             </SectionTitle>
 
-            {!canPickHour && (
+            {!clientData && (
               <div className="mb-3">
-                <Notice>
-                  Elige primero tu <span className="font-semibold">asesor comercial</span> y el{' '}
-                  <span className="font-semibold">día</span> para ver los horarios disponibles.
+                <Notice icon={Fingerprint}>
+                  Primero digita tu <span className="font-semibold">cédula</span> para ver los
+                  horarios disponibles.
+                </Notice>
+              </div>
+            )}
+
+            {clientData && !form.day && (
+              <div className="mb-3">
+                <Notice icon={CalendarDays}>
+                  Elige tu <span className="font-semibold">día</span> para ver los horarios
+                  disponibles.
+                </Notice>
+              </div>
+            )}
+
+            {clientData && form.day && !matchedAgent && (
+              <div className="mb-3">
+                <Notice icon={UserCheck}>
+                  Aún no tienes un asesor asignado. Elige tu hora preferida; el horario se confirmará
+                  cuando se te asigne un asesor.
                 </Notice>
               </div>
             )}
@@ -1226,7 +1341,7 @@ export default function PublicForm() {
             <FieldError message={errors.hour} />
           </div>
 
-          {/* ---------- 10. Masterclass ---------- */}
+          {/* ---------- 7. Masterclass ---------- */}
           {masterclassEnabled && (
             <div ref={registerField('masterclass')}>
               <SectionTitle icon={GraduationCap} required>
@@ -1239,14 +1354,24 @@ export default function PublicForm() {
               />
               <FieldError message={errors.masterclass} />
 
-              {/* Selector de a cuál masterclass asistir (solo si eligió «Sí» y hay lista) */}
-              {form.masterclass === true && masterclasses.length > 0 && (
+              {/* El selector depende del día: sin día no se pueden filtrar las masterclasses. */}
+              {form.masterclass === true && !form.day && (
+                <div className="mt-4">
+                  <Notice>
+                    Primero elige el <span className="font-semibold">día de tu cita</span> para ver
+                    las masterclasses disponibles.
+                  </Notice>
+                </div>
+              )}
+
+              {/* Selector de a cuál masterclass asistir (solo si eligió «Sí», ya hay día y hay lista) */}
+              {form.masterclass === true && form.day && visibleMasterclasses.length > 0 && (
                 <div ref={registerField('masterclassId')} className="mt-4">
                   <SectionTitle icon={GraduationCap} required hint="Elige a cuál sesión asistirás.">
                     ¿A cuál masterclass asistirás?
                   </SectionTitle>
                   <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                    {masterclasses.map((mc) => (
+                    {visibleMasterclasses.map((mc) => (
                       <MasterclassCard
                         key={mc.id}
                         masterclass={mc}
@@ -1263,13 +1388,13 @@ export default function PublicForm() {
 
           <Divider />
 
-          {/* ---------- 11. Enviar ---------- */}
+          {/* ---------- 8. Enviar ---------- */}
           <div>
             <Button
               type="submit"
               size="lg"
               loading={submitting}
-              disabled={scheduleUnavailable}
+              disabled={scheduleUnavailable || lookupStatus === 'loading'}
               icon={Ticket}
               className={[
                 'relative w-full overflow-hidden !bg-belen-orange shadow-card transition-transform',

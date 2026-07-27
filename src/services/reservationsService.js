@@ -8,6 +8,8 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  setDoc,
+  updateDoc,
   where,
   writeBatch,
 } from 'firebase/firestore'
@@ -25,7 +27,7 @@ import {
   formatSerial,
   slotId,
 } from '../lib/constants'
-import { clean, isValidEmail, toDate, uuid } from '../lib/format'
+import { clean, isValidEmail, normalizeName, onlyDigits, toDate, uuid } from '../lib/format'
 
 /** Prefijo de respaldo si config/general aún no tiene ticketPrefix. */
 const FALLBACK_PREFIX = 'GEN'
@@ -63,20 +65,29 @@ async function readConfig() {
 }
 
 /**
- * Crea una solicitud de reserva. Valida TODO en el cliente y desnormaliza el nombre del agente.
- * NO crea el slot: el bloqueo de disponibilidad solo ocurre al aprobar (ver §6 de ARCHITECTURE.md).
+ * Crea una solicitud de reserva a partir de la CÉDULA del cliente.
+ *
+ * El cliente solo digita su cédula, su correo y el nombre de quien asiste; el resto (empresa,
+ * código de cliente y ASESOR) se autocompleta desde la base de clientes (colección `clients`):
+ *   · La cédula debe existir en `clients` (si no, se rechaza).
+ *   · El asesor se resuelve emparejando el «vendedor» del cliente con el nombre de un asesor activo
+ *     (comparación normalizada de nombres). Si aún no hay asesor con ese nombre, la reserva se crea
+ *     SIN asesor (`agentId: ''`) y el administrador lo asigna después.
+ *   · El slot solo se comprueba/bloquea cuando hay asesor (el bloqueo real ocurre al aprobar).
+ *
  * @returns {Promise<string>} id de la reserva creada
  */
 export async function createReservation(data) {
   const payload = {
-    clientCode: clean(data?.clientCode),
+    cedula: onlyDigits(data?.cedula),
+    clientCode: '', // se autocompleta desde el cliente
+    companyName: '', // se autocompleta desde el cliente (columna «Nombre»)
     fullName: clean(data?.fullName),
-    companyName: clean(data?.companyName),
     email: clean(data?.email).toLowerCase(),
-    phone: clean(data?.phone),
     hasCompanion: Boolean(data?.hasCompanion),
     companionName: clean(data?.companionName),
-    agentId: clean(data?.agentId),
+    vendedor: '', // nombre del asesor según el Excel (para poder reasignar si aún no existe)
+    agentId: '', // se resuelve por nombre; '' si todavía no hay un asesor con ese nombre
     agentName: '',
     day: clean(data?.day),
     hour: clean(data?.hour),
@@ -86,22 +97,19 @@ export async function createReservation(data) {
   }
 
   try {
-    // --- Campos obligatorios ---
-    if (!payload.clientCode) fail('Escribe tu código de cliente.')
-    if (!payload.fullName) fail('Escribe tu nombre completo.')
-    if (!payload.companyName) fail('Escribe el nombre de tu empresa.')
+    // --- Campos que digita el cliente ---
+    if (!payload.cedula) fail('Escribe tu número de cédula.')
+    if (!payload.fullName) fail('Escribe el nombre de quien asistirá.')
     if (!payload.email) fail('Escribe tu correo electrónico.')
     if (!isValidEmail(payload.email)) fail('El correo electrónico no es válido.')
-    if (!payload.agentId) fail('Selecciona el asesor comercial que te acompañará.')
     if (!payload.day) fail('Selecciona el día de tu cita.')
     if (!payload.hour) fail('Selecciona la hora de tu cita.')
 
-    // --- Una sola ida a la red para config, agente y disponibilidad del slot ---
-    const currentSlotId = slotId(payload.day, payload.hour, payload.agentId)
-    const [configSnap, agentSnap, slotSnap] = await Promise.all([
+    // --- Una sola ida a la red: config, cliente (por cédula) y asesores ---
+    const [configSnap, clientSnap, agentsSnap] = await Promise.all([
       getDoc(doc(db, COL.CONFIG, CONFIG_DOC)),
-      getDoc(doc(db, COL.AGENTS, payload.agentId)),
-      getDoc(doc(db, COL.SLOTS, currentSlotId)),
+      getDoc(doc(db, COL.CLIENTS, payload.cedula)),
+      getDocs(collection(db, COL.AGENTS)),
     ])
 
     if (!configSnap.exists()) {
@@ -112,6 +120,25 @@ export async function createReservation(data) {
     if (config.formOpen === false) {
       fail('El formulario de reservas está cerrado por el momento.')
     }
+
+    // --- La cédula debe existir en la base de clientes ---
+    if (!clientSnap.exists()) {
+      fail('No encontramos esa cédula en nuestra base de clientes. Verifícala o contacta a tu asesor.')
+    }
+    const client = clientSnap.data()
+    payload.clientCode = clean(client.codigo)
+    payload.companyName = clean(client.nombre)
+    payload.vendedor = clean(client.vendedor)
+
+    // --- Asesor: se empareja el «vendedor» del cliente con un asesor activo, por nombre ---
+    const agents = agentsSnap.docs.map((d) => ({ id: d.id, ...d.data() }))
+    const match = agents.find(
+      (a) => a.active !== false && normalizeName(a.name) === normalizeName(payload.vendedor),
+    )
+    if (match) {
+      payload.agentId = match.id
+      payload.agentName = clean(match.name)
+    } // si no hay coincidencia: queda sin asesor; el administrador lo asignará luego
 
     // --- El día y la hora deben existir (y estar habilitados) en la configuración ---
     const day = (config.days || []).find((d) => d.id === payload.day)
@@ -133,52 +160,148 @@ export async function createReservation(data) {
     }
     if (!payload.hasCompanion) payload.companionName = ''
 
-    // --- Masterclass: si asiste y hay lista configurada, debe elegir a cuál. Es informativo. ---
-    const masterclasses = Array.isArray(config.masterclasses) ? config.masterclasses : []
-    if (payload.masterclass && masterclasses.length > 0) {
-      const chosen = masterclasses.find((m) => m.id === payload.masterclassId)
-      if (!chosen) fail('Selecciona a cuál masterclass asistirás.')
+    // --- Masterclass: si asiste, debe elegir una de las de SU DÍA. Es informativo. ---
+    const allMasterclasses = Array.isArray(config.masterclasses) ? config.masterclasses : []
+    const dayMasterclasses = allMasterclasses.filter((m) => !m.day || m.day === payload.day)
+    if (payload.masterclass && dayMasterclasses.length > 0) {
+      const chosen = dayMasterclasses.find((m) => m.id === payload.masterclassId)
+      if (!chosen) fail('Selecciona a cuál masterclass asistirás (de las disponibles para tu día).')
       payload.masterclassName = clean(chosen.name)
     } else {
-      // No asiste, o no hay lista: no se guarda ninguna masterclass.
       payload.masterclassId = ''
       payload.masterclassName = ''
     }
 
-    // --- El asesor debe existir y estar activo ---
-    if (!agentSnap.exists()) fail('El asesor comercial seleccionado ya no existe.')
-    const agent = agentSnap.data()
-    if (agent.active === false) fail('El asesor comercial seleccionado ya no está disponible.')
-    payload.agentName = clean(agent.name)
-
-    // --- Comprobación previa de disponibilidad (la autoridad real es la transacción al aprobar) ---
-    if (slotSnap.exists()) fail(ERRORS.SLOT_TAKEN)
-
     const reservationRef = doc(collection(db, COL.RESERVATIONS))
-    await runTransaction(db, async (transaction) => {
-      // Relectura del slot dentro de la transacción: evita crear una solicitud para un
-      // horario que se acaba de ocupar entre la comprobación previa y este momento.
-      const freshSlot = await transaction.get(doc(db, COL.SLOTS, currentSlotId))
-      if (freshSlot.exists()) fail(ERRORS.SLOT_TAKEN)
+    const base = {
+      ...payload,
+      status: RESERVATION_STATUS.PENDING,
+      rejectionReason: '',
+      emailStatus: EMAIL_STATUS.NOT_SENT,
+      emailError: '',
+      emailSentAt: null,
+      ticketIds: [],
+      createdAt: serverTimestamp(),
+      approvedAt: null,
+      reviewedBy: null,
+    }
 
-      transaction.set(reservationRef, {
-        ...payload,
-        status: RESERVATION_STATUS.PENDING,
-        rejectionReason: '',
-        emailStatus: EMAIL_STATUS.NOT_SENT,
-        emailError: '',
-        emailSentAt: null,
-        ticketIds: [],
-        createdAt: serverTimestamp(),
-        approvedAt: null,
-        reviewedBy: null,
+    if (payload.agentId) {
+      // Con asesor: comprobamos disponibilidad del slot (la autoridad real es la transacción al aprobar).
+      const currentSlotId = slotId(payload.day, payload.hour, payload.agentId)
+      await runTransaction(db, async (transaction) => {
+        const freshSlot = await transaction.get(doc(db, COL.SLOTS, currentSlotId))
+        if (freshSlot.exists()) fail(ERRORS.SLOT_TAKEN)
+        transaction.set(reservationRef, base)
       })
-    })
+    } else {
+      // Sin asesor: no hay slot que bloquear todavía; el administrador asigna el asesor después.
+      await setDoc(reservationRef, base)
+    }
 
     return reservationRef.id
   } catch (error) {
     rethrow(error, 'No pudimos registrar tu solicitud. Revisa tu conexión e inténtalo de nuevo.')
   }
+}
+
+/**
+ * Asigna (o reasigna) el asesor de una reserva PENDIENTE. Lo usa el administrador cuando una
+ * solicitud entró «sin asesor» (porque el cliente tenía un vendedor sin asesor creado aún).
+ *
+ * @param {string} reservationId
+ * @param {string} agentId  id del asesor a asignar
+ * @param {string} adminUid
+ */
+export async function assignReservationAgent(reservationId, agentId, adminUid) {
+  try {
+    const [reservationSnap, agentSnap] = await Promise.all([
+      getDoc(doc(db, COL.RESERVATIONS, reservationId)),
+      getDoc(doc(db, COL.AGENTS, agentId)),
+    ])
+    if (!reservationSnap.exists()) fail(ERRORS.NOT_FOUND)
+    if (!agentSnap.exists()) fail('El asesor seleccionado ya no existe.')
+
+    const reservation = reservationSnap.data()
+    if (reservation.status !== RESERVATION_STATUS.PENDING) {
+      fail('Solo puedes cambiar el asesor de una solicitud que aún está pendiente.')
+    }
+
+    await updateDoc(doc(db, COL.RESERVATIONS, reservationId), {
+      agentId,
+      agentName: clean(agentSnap.data().name),
+      reviewedBy: adminUid || null,
+    })
+  } catch (error) {
+    rethrow(error, 'No pudimos asignar el asesor. Revisa tu conexión e inténtalo de nuevo.')
+  }
+}
+
+/**
+ * Reasigna TODAS las reservas de un asesor a otro (se usa al eliminar un asesor: «migrar sus
+ * clientes»). Reasigna agentId/agentName en las reservas y, para las ya aprobadas, también en sus
+ * entradas y mueve el bloqueo de horario (slot) al asesor destino cuando ese horario esté libre.
+ *
+ * @param {string} fromAgentId asesor que se va
+ * @param {string} toAgentId   asesor que recibe sus reservas
+ * @returns {Promise<{ moved: number, slotConflicts: number }>}
+ */
+export async function migrateReservationsToAgent(fromAgentId, toAgentId) {
+  if (!fromAgentId || !toAgentId || fromAgentId === toAgentId) {
+    fail('Elige un asesor destino distinto para migrar las reservas.')
+  }
+
+  const toAgentSnap = await getDoc(doc(db, COL.AGENTS, toAgentId))
+  if (!toAgentSnap.exists()) fail('El asesor destino ya no existe.')
+  const toAgentName = clean(toAgentSnap.data().name)
+
+  const reservationsSnap = await getDocs(
+    query(collection(db, COL.RESERVATIONS), where('agentId', '==', fromAgentId)),
+  )
+
+  let moved = 0
+  let slotConflicts = 0
+
+  for (const resDoc of reservationsSnap.docs) {
+    const reservation = resDoc.data()
+    const batch = writeBatch(db)
+
+    batch.update(resDoc.ref, { agentId: toAgentId, agentName: toAgentName })
+
+    if (reservation.status === RESERVATION_STATUS.APPROVED) {
+      // Mover el slot al asesor destino, solo si ese horario está libre para él.
+      const oldSlotId = slotId(reservation.day, reservation.hour, fromAgentId)
+      const newSlotId = slotId(reservation.day, reservation.hour, toAgentId)
+      const newSlotSnap = await getDoc(doc(db, COL.SLOTS, newSlotId))
+
+      if (newSlotSnap.exists()) {
+        slotConflicts += 1 // el destino ya tiene ese horario ocupado: se reasigna la reserva pero no el slot
+      } else {
+        batch.delete(doc(db, COL.SLOTS, oldSlotId))
+        batch.set(doc(db, COL.SLOTS, newSlotId), {
+          day: reservation.day,
+          hour: reservation.hour,
+          agentId: toAgentId,
+          reservationId: resDoc.id,
+          createdAt: serverTimestamp(),
+        })
+      }
+
+      // Reasignar el asesor en las entradas emitidas de esta reserva.
+      const ids = Array.isArray(reservation.ticketIds) ? reservation.ticketIds : []
+      ids.forEach((ticketId) => {
+        batch.update(doc(db, COL.TICKETS, ticketId), {
+          agentId: toAgentId,
+          agentName: toAgentName,
+        })
+      })
+    }
+
+    await batch.commit()
+    moved += 1
+  }
+
+  return { moved, slotConflicts }
 }
 
 /**
@@ -251,6 +374,12 @@ export async function approveReservation(reservationId, adminUid) {
       const reservationSnap = await transaction.get(reservationRef)
       if (!reservationSnap.exists()) fail(ERRORS.NOT_FOUND)
       const reservation = reservationSnap.data()
+
+      // Una reserva «sin asesor» no se puede aprobar: primero hay que asignarle uno (hay reservas
+      // que entran sin asesor cuando el vendedor del cliente aún no tiene asesor creado).
+      if (!reservation.agentId) {
+        fail('Esta solicitud no tiene asesor asignado. Asígnale un asesor antes de aprobarla.')
+      }
 
       const currentSlotId = slotId(reservation.day, reservation.hour, reservation.agentId)
       const slotRef = doc(db, COL.SLOTS, currentSlotId)

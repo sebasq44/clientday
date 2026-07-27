@@ -136,7 +136,8 @@ function sanitizeHours(value) {
 /**
  * Normaliza la lista de masterclasses. Es opcional (puede quedar vacía). Se descartan las que no
  * tengan nombre; startTime/endTime son opcionales pero, si vienen, deben ser HH:mm. Cada una
- * conserva su `id` (o se le genera uno estable si falta), para poder referenciarla en la reserva.
+ * conserva su `id` (o se le genera uno estable si falta) y su `day` (id de día del evento, o '' si
+ * aplica a cualquier día), para poder filtrarlas por día en el formulario.
  */
 function sanitizeMasterclasses(value) {
   if (!Array.isArray(value)) return []
@@ -160,7 +161,11 @@ function sanitizeMasterclasses(value) {
       throw new Error(`La hora de fin de "${name}" debe tener el formato HH:mm.`)
     }
 
-    list.push({ id, name, startTime, endTime })
+    // `day`: id de un día del evento (AAAA-MM-DD) o '' (cualquier día). No lo cotejamos contra la
+    // lista de días aquí para no acoplar el guardado a un orden concreto; la UI ofrece los días válidos.
+    const day = clean(raw?.day)
+
+    list.push({ id, name, day, startTime, endTime })
   })
   return list
 }

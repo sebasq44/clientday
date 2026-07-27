@@ -13,8 +13,8 @@ export const DEFAULT_CONFIG = {
   // Lista de masterclasses que el cliente elige en el formulario si asiste. Es informativa
   // (aparece en el boleto y el correo); no impone bloqueos. La administra el superadmin en Ajustes.
   masterclasses: [
-    { id: 'mc-1', name: 'Empaque sostenible', startTime: '10:00', endTime: '11:00' },
-    { id: 'mc-2', name: 'Tendencias de mercado', startTime: '12:00', endTime: '13:00' },
+    { id: 'mc-1', name: 'Empaque sostenible', day: '2026-09-08', startTime: '10:00', endTime: '11:00' },
+    { id: 'mc-2', name: 'Tendencias de mercado', day: '2026-09-09', startTime: '12:00', endTime: '13:00' },
   ],
   days: [
     { id: '2026-09-08', label: '8 Septiembre', letter: 'M', enabled: true },

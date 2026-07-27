@@ -15,6 +15,7 @@ import AdminScanner from './pages/AdminScanner'
 import AdminFood from './pages/AdminFood'
 import AdminAttendance from './pages/AdminAttendance'
 import AdminUsers from './pages/AdminUsers'
+import AdminClients from './pages/AdminClients'
 
 // Rutas donde entran los tres roles.
 const ALL_ROLES = [ROLE.SUPERADMIN, ROLE.AGENTE, ROLE.SEGURIDAD]
@@ -72,6 +73,14 @@ export default function App() {
               element={
                 <ProtectedRoute roles={SUPER_ONLY}>
                   <AdminUsers />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="clients"
+              element={
+                <ProtectedRoute roles={SUPER_ONLY}>
+                  <AdminClients />
                 </ProtectedRoute>
               }
             />

@@ -87,6 +87,25 @@ export function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(email || '').trim())
 }
 
+/**
+ * Normaliza un nombre para comparar sin depender de tildes, mayúsculas ni espacios extra.
+ * Se usa para emparejar el «Vendedor» del Excel con el nombre del asesor creado en el panel
+ * (ej. "Diego Segura", "DIEGO  SEGURA" y "diego segura" se consideran el mismo).
+ */
+export function normalizeName(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // quita los diacríticos (tildes, diéresis)
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+}
+
+/** Deja solo dígitos (para la cédula: sin espacios, guiones ni puntos). */
+export function onlyDigits(value) {
+  return String(value ?? '').replace(/\D/g, '')
+}
+
 /** Quita espacios y normaliza a una sola línea. */
 export function clean(value) {
   return String(value ?? '').trim().replace(/\s+/g, ' ')

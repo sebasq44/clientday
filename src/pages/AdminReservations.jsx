@@ -13,6 +13,7 @@ import {
   Send,
   Ticket,
   TriangleAlert,
+  UserPlus,
   X,
 } from 'lucide-react'
 
@@ -37,6 +38,7 @@ import { useReservations } from '../hooks/useReservations'
 
 import {
   approveReservation,
+  assignReservationAgent,
   cancelReservation,
   rejectReservation,
 } from '../services/reservationsService'
@@ -169,6 +171,26 @@ function AgentCell({ name, photo }) {
   )
 }
 
+/**
+ * Asesor de la reserva. Si entró SIN asesor (agentId vacío), muestra un badge ámbar
+ * «Sin asesor» y, debajo, el vendedor esperado según la base de clientes.
+ */
+function AgentInfo({ reservation, agent }) {
+  if (!reservation.agentId) {
+    return (
+      <div className="min-w-0">
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+          Sin asesor
+        </span>
+        {reservation.vendedor ? (
+          <p className="mt-1 truncate text-xs text-slate-400">Vendedor: {reservation.vendedor}</p>
+        ) : null}
+      </div>
+    )
+  }
+  return <AgentCell name={reservation.agentName || agent?.name} photo={agent?.photoBase64} />
+}
+
 function ClientCell({ reservation }) {
   return (
     <div className="min-w-0">
@@ -177,6 +199,9 @@ function ClientCell({ reservation }) {
         <span className="font-semibold text-belen-orange">{reservation.clientCode}</span>
         {reservation.companyName ? ` · ${reservation.companyName}` : ''}
       </p>
+      {reservation.cedula ? (
+        <p className="truncate text-xs text-slate-400">Cédula: {reservation.cedula}</p>
+      ) : null}
       <p className="truncate text-xs text-slate-400">{reservation.email}</p>
     </div>
   )
@@ -222,7 +247,7 @@ function ReadOnlyReason({ reservation }) {
 
 export default function AdminReservations() {
   // Roles: el agente solo ve/actúa sobre sus propias reservas; seguridad es solo lectura.
-  const { user, isAgente, isSeguridad, agentId } = useAuth()
+  const { user, isAgente, isSeguridad, isSuperAdmin, agentId } = useAuth()
   const toast = useToast()
   const { config, loading: configLoading } = useConfig()
   const { agents } = useAgents()
@@ -242,6 +267,10 @@ export default function AdminReservations() {
   const [rejectError, setRejectError] = useState('')
   const [cancelTarget, setCancelTarget] = useState(null)
 
+  const [assignTarget, setAssignTarget] = useState(null)
+  const [assignAgentId, setAssignAgentId] = useState('')
+  const [assignError, setAssignError] = useState('')
+
   const [ticketsTarget, setTicketsTarget] = useState(null)
   const [ticketsState, setTicketsState] = useState({ list: [], loading: false, error: '' })
 
@@ -254,6 +283,15 @@ export default function AdminReservations() {
     agents.forEach((agent) => map.set(agent.id, agent))
     return map
   }, [agents])
+
+  // Asesores activos: son los únicos asignables a una reserva «sin asesor».
+  const activeAgents = useMemo(
+    () =>
+      agents
+        .filter((agent) => agent.active !== false)
+        .sort((a, b) => String(a.name).localeCompare(String(b.name), 'es')),
+    [agents],
+  )
 
   const agentOptions = useMemo(() => {
     const map = new Map()
@@ -458,6 +496,33 @@ export default function AdminReservations() {
     }
   }
 
+  const closeAssign = () => {
+    setAssignTarget(null)
+    setAssignAgentId('')
+    setAssignError('')
+  }
+
+  const handleAssignAgent = async () => {
+    const target = assignTarget
+    if (!target) return
+
+    if (!assignAgentId) {
+      setAssignError('Selecciona un asesor para asignar.')
+      return
+    }
+
+    setBusy({ id: target.id, action: 'assign' })
+    try {
+      await assignReservationAgent(target.id, assignAgentId, user?.uid)
+      closeAssign()
+      toast.success('Asesor asignado. Ya puedes aprobar la reserva.')
+    } catch (err) {
+      toast.error(err?.message || 'No se pudo asignar el asesor.')
+    } finally {
+      setBusy(NO_BUSY)
+    }
+  }
+
   const handleResendEmail = async (reservation) => {
     setBusy({ id: reservation.id, action: 'email' })
     try {
@@ -490,10 +555,10 @@ export default function AdminReservations() {
     // Encabezados legibles en español; también fijan el orden de las columnas del .xlsx.
     const headers = [
       'Código',
+      'Cédula',
       'Nombre',
       'Empresa',
       'Correo',
-      'Teléfono',
       'Asesor',
       'Día',
       'Hora',
@@ -507,11 +572,11 @@ export default function AdminReservations() {
     // Una fila (objeto plano) por reserva FILTRADA: respeta la búsqueda y los filtros activos.
     const rows = filtered.map((reservation) => ({
       Código: reservation.clientCode,
+      Cédula: reservation.cedula || '',
       Nombre: reservation.fullName,
       Empresa: reservation.companyName,
       Correo: reservation.email,
-      Teléfono: reservation.phone,
-      Asesor: reservation.agentName,
+      Asesor: reservation.agentName || 'Sin asesor',
       Día: dayLabel(config, reservation.day),
       Hora: formatHourRange(reservation.hour),
       Acompañante: reservation.hasCompanion
@@ -571,15 +636,34 @@ export default function AdminReservations() {
     if (reservation.status === RESERVATION_STATUS.PENDING) {
       // Seguridad es solo lectura: no puede aprobar ni rechazar.
       if (isSeguridad) return <span className="text-sm text-slate-400">Solo lectura</span>
+      // Sin asesor asignado: no se puede aprobar hasta asignarle uno (el servicio también lo exige).
+      const noAgent = !reservation.agentId
       return (
         <div className={containerClass}>
+          {noAgent && isSuperAdmin && (
+            <Button
+              size={size}
+              className={buttonClass}
+              variant="secondary"
+              icon={UserPlus}
+              disabled={busy.id === reservation.id}
+              onClick={() => {
+                setAssignAgentId('')
+                setAssignError('')
+                setAssignTarget(reservation)
+              }}
+            >
+              Asignar asesor
+            </Button>
+          )}
           <Button
             size={size}
             className={buttonClass}
             variant="primary"
             icon={Check}
             loading={isBusy(reservation.id, 'approve')}
-            disabled={busy.id === reservation.id}
+            disabled={busy.id === reservation.id || noAgent}
+            title={noAgent ? 'Asigna un asesor primero' : undefined}
             onClick={() => setApproveTarget(reservation)}
           >
             Aprobar
@@ -598,6 +682,11 @@ export default function AdminReservations() {
           >
             Rechazar
           </Button>
+          {noAgent && (
+            <p className="w-full text-xs font-medium text-amber-600">
+              Asigna un asesor primero.
+            </p>
+          )}
         </div>
       )
     }
@@ -864,10 +953,7 @@ export default function AdminReservations() {
                           <ClientCell reservation={reservation} />
                         </td>
                         <td className="max-w-[12rem] px-3 py-3">
-                          <AgentCell
-                            name={reservation.agentName || agent?.name}
-                            photo={agent?.photoBase64}
-                          />
+                          <AgentInfo reservation={reservation} agent={agent} />
                         </td>
                         <td className="whitespace-nowrap px-3 py-3">
                           <p className="text-sm font-semibold text-belen-ink">
@@ -920,10 +1006,7 @@ export default function AdminReservations() {
                     </div>
 
                     <div className="mt-3 border-t border-belen-blue/10 pt-3">
-                      <AgentCell
-                        name={reservation.agentName || agent?.name}
-                        photo={agent?.photoBase64}
-                      />
+                      <AgentInfo reservation={reservation} agent={agent} />
                     </div>
 
                     <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
@@ -1168,6 +1251,72 @@ export default function AdminReservations() {
                 value={String((cancelTarget.ticketIds || []).length)}
               />
             </dl>
+          </div>
+        )}
+      </Modal>
+
+      {/* -------- Modal: asignar asesor -------- */}
+      <Modal
+        open={Boolean(assignTarget)}
+        onClose={() => {
+          if (busy.action !== 'assign') closeAssign()
+        }}
+        title="Asignar asesor"
+        size="md"
+        footer={
+          <>
+            <Button variant="ghost" onClick={closeAssign} disabled={busy.action === 'assign'}>
+              Volver
+            </Button>
+            <Button
+              variant="primary"
+              icon={UserPlus}
+              loading={busy.action === 'assign'}
+              onClick={handleAssignAgent}
+            >
+              Asignar asesor
+            </Button>
+          </>
+        }
+      >
+        {assignTarget && (
+          <div className="space-y-4">
+            <p className="text-sm leading-relaxed text-slate-600">
+              Esta solicitud entró sin asesor asignado. Elige el asesor que atenderá a{' '}
+              <span className="font-semibold text-belen-ink">{assignTarget.fullName}</span>. Una vez
+              asignado, podrás aprobar la reserva.
+            </p>
+
+            {assignTarget.vendedor && (
+              <p className="text-xs leading-snug text-slate-500">
+                Vendedor esperado según la base de clientes:{' '}
+                <span className="font-semibold text-belen-ink">{assignTarget.vendedor}</span>.
+              </p>
+            )}
+
+            <Select
+              label="Asesor"
+              required
+              value={assignAgentId}
+              error={assignError}
+              onChange={(event) => {
+                setAssignAgentId(event.target.value)
+                if (assignError) setAssignError('')
+              }}
+            >
+              <option value="">Selecciona un asesor…</option>
+              {activeAgents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </Select>
+
+            {activeAgents.length === 0 && (
+              <p className="text-xs font-medium text-amber-600">
+                No hay asesores activos disponibles. Crea o activa un asesor primero.
+              </p>
+            )}
           </div>
         )}
       </Modal>
