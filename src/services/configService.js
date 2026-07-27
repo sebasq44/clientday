@@ -1,6 +1,6 @@
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore'
 import { db } from '../lib/firebase'
-import { COL, CONFIG_DOC } from '../lib/constants'
+import { COL, CONFIG_DOC, MASTERCLASS_COUNTER_DOC } from '../lib/constants'
 import { DEFAULT_CONFIG } from '../lib/seed'
 import { clean } from '../lib/format'
 
@@ -91,6 +91,24 @@ export function subscribeConfig(cb, onError) {
   )
 }
 
+/**
+ * Suscripción en vivo al conteo de cupos de masterclass ocupados (counters/masterclasses).
+ * Lo usa el formulario público para el contador de urgencia. El callback recibe un objeto
+ * { [masterclassId]: ocupados }.
+ * @param {(counts: Record<string, number>) => void} cb
+ * @returns {() => void}
+ */
+export function subscribeMasterclassCounts(cb) {
+  return onSnapshot(
+    doc(db, COL.COUNTERS, MASTERCLASS_COUNTER_DOC),
+    (snap) => cb(snap.exists() ? snap.data() : {}),
+    (err) => {
+      console.error('[configService] subscribeMasterclassCounts', err)
+      cb({})
+    },
+  )
+}
+
 function sanitizeDays(value) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new Error('Debes configurar al menos un día del evento.')
@@ -165,7 +183,32 @@ function sanitizeMasterclasses(value) {
     // lista de días aquí para no acoplar el guardado a un orden concreto; la UI ofrece los días válidos.
     const day = clean(raw?.day)
 
-    list.push({ id, name, day, startTime, endTime })
+    // `cupos`: cupos máximos (entero >= 0). 0 = sin límite (no se muestra contador).
+    const cuposNum = Math.floor(Number(raw?.cupos))
+    const cupos = Number.isFinite(cuposNum) && cuposNum > 0 ? cuposNum : 0
+
+    list.push({ id, name, day, startTime, endTime, cupos })
+  })
+  return list
+}
+
+/**
+ * Normaliza la lista de administradores a notificar (nombre + correo). Se descartan los que no
+ * tengan correo válido; el nombre es opcional (si falta, se usa un saludo genérico).
+ */
+function sanitizeNotifyAdmins(value) {
+  if (!Array.isArray(value)) return []
+  const seen = new Set()
+  const list = []
+  value.forEach((raw) => {
+    const email = clean(raw?.email).toLowerCase()
+    if (!email) return
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      throw new Error(`El correo "${email}" del administrador a notificar no es válido.`)
+    }
+    if (seen.has(email)) return // sin duplicados por correo
+    seen.add(email)
+    list.push({ name: clean(raw?.name), email })
   })
   return list
 }
@@ -200,6 +243,7 @@ export async function updateConfig(patch) {
   if ('allowCompanion' in patch) payload.allowCompanion = Boolean(patch.allowCompanion)
   if ('masterclassEnabled' in patch) payload.masterclassEnabled = Boolean(patch.masterclassEnabled)
   if ('masterclasses' in patch) payload.masterclasses = sanitizeMasterclasses(patch.masterclasses)
+  if ('notifyAdmins' in patch) payload.notifyAdmins = sanitizeNotifyAdmins(patch.notifyAdmins)
   if ('days' in patch) payload.days = sanitizeDays(patch.days)
   if ('hours' in patch) payload.hours = sanitizeHours(patch.hours)
 

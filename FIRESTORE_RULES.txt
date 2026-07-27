@@ -288,11 +288,15 @@ service cloud.firestore {
     }
 
     // ================================================================
-    // counters/tickets — correlativo del serial de las entradas
-    // Se lee e incrementa dentro de la aprobación: superadmin o agente.
+    // counters/{id} — contadores numéricos:
+    //   · counters/tickets       → correlativo del serial de las entradas.
+    //   · counters/masterclasses → cupos de masterclass ocupados { [id]: n }.
+    // READ público: son solo números, no hay dato sensible, y el formulario público necesita
+    //   leer los cupos de masterclass para el contador de urgencia.
+    // WRITE: superadmin o agente (se incrementan dentro de aprobar/cancelar).
     // ================================================================
     match /counters/{counterId} {
-      allow read: if isSuperAdmin() || isAgente();
+      allow read: if true;
       allow write: if isSuperAdmin() || isAgente();
     }
 

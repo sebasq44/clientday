@@ -20,6 +20,7 @@ import { useAgents } from '../hooks/useAgents'
 import { useConfig } from '../hooks/useConfig'
 import { peekScanAction, processScan, subscribeScans } from '../services/scanService'
 import { subscribeTickets } from '../services/ticketsService'
+import { sendScanNotification } from '../services/emailService'
 import {
   HOLDER_TYPE_LABEL,
   SCAN_ACTION,
@@ -238,6 +239,13 @@ export default function AdminScanner() {
         vibrate(outcome.ok)
         beep(outcome.ok)
         setResult(outcome)
+
+        // Solo al registrar una ENTRADA se avisa por correo a los administradores configurados.
+        // Es «disparar y olvidar»: no bloquea el escaneo ni el resultado si el correo falla.
+        if (outcome.ok && outcome.action === SCAN_ACTION.CHECK_IN && outcome.ticket) {
+          sendScanNotification(outcome.ticket, config).catch(() => {})
+        }
+
         return outcome
       } catch (error) {
         // processScan ya absorbe los fallos previsibles; esto es la red de seguridad final.
@@ -253,7 +261,7 @@ export default function AdminScanner() {
         if (aliveRef.current) setProcessing(false)
       }
     },
-    [user?.uid],
+    [user?.uid, config],
   )
 
   /* --- Resolución de un token ---

@@ -141,9 +141,13 @@ function buildPlainText(reservation, tickets, hourRange) {
 }
 
 /**
- * POST → recibe el cuerpo del §11 del contrato y envía el correo con las entradas.
+ * POST → dos tipos de mensaje:
  *
- * Entrada:
+ *  a) Notificación de ENTRADA a administradores (correo simple, sin QR):
+ *     { secret, type: 'scan_notice', admins: [{name,email}],
+ *       entry: { holderName, clientCode, companyName, serial } }
+ *
+ *  b) Correo con las ENTRADAS (por defecto, sin `type`), según el §11 del contrato:
  *   { secret, to, reservation: { fullName, companyName, clientCode, agentName,
  *                                dayLabel, dayLetter, hour, masterclass, masterclassName },
  *     tickets: [ { serial, holderName, holderType, qrPng } ] }
@@ -151,6 +155,50 @@ function buildPlainText(reservation, tickets, hourRange) {
  *
  * Salida:  { ok: true, sent: N }   |   { ok: false, error: 'mensaje' }
  */
+/**
+ * Envía a cada administrador configurado un correo simple avisando que alguien acaba de ingresar.
+ * Entrada:  { type:'scan_notice', admins:[{name,email}], entry:{ holderName, clientCode, companyName, serial } }
+ * Salida:   { ok:true, sent:N }
+ */
+function handleScanNotice(body) {
+  try {
+    var admins = body.admins || [];
+    var entry = body.entry || {};
+    if (!admins.length) return jsonOutput({ ok: true, sent: 0 });
+
+    var holder = String(entry.holderName || 'Un invitado');
+    var code = String(entry.clientCode || '');
+    var company = String(entry.companyName || '');
+    var serial = String(entry.serial || '');
+
+    var subject = 'Ingreso registrado · Día del Cliente 2026';
+    var sent = 0;
+
+    for (var i = 0; i < admins.length; i++) {
+      var email = String(admins[i].email || '').trim();
+      if (!email) continue;
+      var name = String(admins[i].name || '').trim();
+      var greeting = name ? 'Hola ' + name + ',' : 'Hola,';
+
+      var codePart = code ? ' (código ' + code + ')' : '';
+      var companyPart = company ? ' de ' + company : '';
+      var body1 =
+        greeting +
+        '\n\nAcaba de ingresar ' + holder + companyPart + codePart +
+        ' en la entrada principal.' +
+        (serial ? '\nEntrada: ' + serial : '') +
+        '\n\n— Sistema Día del Cliente 2026, Empaques Belén';
+
+      GmailApp.sendEmail(email, subject, body1, { name: SENDER_NAME });
+      sent++;
+    }
+
+    return jsonOutput({ ok: true, sent: sent });
+  } catch (err) {
+    return jsonOutput({ ok: false, error: err && err.message ? err.message : String(err) });
+  }
+}
+
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents) {
@@ -162,6 +210,12 @@ function doPost(e) {
     // 1. Autorización por secreto compartido.
     if (!body || body.secret !== SHARED_SECRET) {
       return jsonOutput({ ok: false, error: 'No autorizado' });
+    }
+
+    // 1.b Notificación de ENTRADA a los administradores (correo simple, sin QR).
+    //     Se dispara desde el escáner cada vez que alguien registra su ingreso.
+    if (body.type === 'scan_notice') {
+      return handleScanNotice(body);
     }
 
     // 2. Validación de la carga.

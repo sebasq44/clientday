@@ -17,6 +17,7 @@ import {
   Ticket,
   UserCheck,
   UserPlus,
+  Users,
 } from 'lucide-react'
 
 import Button from '../components/ui/Button'
@@ -29,8 +30,9 @@ import { useConfig } from '../hooks/useConfig'
 import { createReservation } from '../services/reservationsService'
 import { lookupClientByCedula } from '../services/clientsService'
 import { getOccupiedSlots, subscribeOccupiedSlots } from '../services/availabilityService'
+import { subscribeMasterclassCounts } from '../services/configService'
 
-import { ERRORS, slotId } from '../lib/constants'
+import { displayedCupos, ERRORS, slotId } from '../lib/constants'
 import { celebrateReservation } from '../lib/celebrate'
 import {
   clean,
@@ -313,8 +315,42 @@ function DayPill({ day, selected, onSelect }) {
   )
 }
 
+/**
+ * Chip con el contador de cupos y «sesgo de urgencia».
+ * `cupos` es el resultado de displayedCupos (o null → no se muestra nada).
+ */
+function CuposBadge({ cupos }) {
+  if (!cupos) return null
+
+  const soldOut = cupos.available === 0
+  // «Bajo» = queda un 10 % o menos del total: se resalta más para acentuar la urgencia.
+  const low = !soldOut && cupos.available <= Math.max(1, Math.ceil(cupos.max * 0.1))
+
+  return (
+    <span
+      className={[
+        'mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold',
+        soldOut
+          ? 'bg-red-50 text-red-500 ring-1 ring-red-200'
+          : low
+            ? 'bg-amber-100 text-amber-800 ring-1 ring-amber-300'
+            : 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
+      ].join(' ')}
+    >
+      {soldOut ? (
+        'Cupos agotados'
+      ) : (
+        <>
+          <Users className="h-3 w-3 shrink-0" aria-hidden="true" />
+          {cupos.available} de {cupos.max} cupos aún disponibles
+        </>
+      )}
+    </span>
+  )
+}
+
 /** Tarjeta seleccionable de una masterclass (nombre + rango horario), al estilo de día/hora. */
-function MasterclassCard({ masterclass, selected, onSelect }) {
+function MasterclassCard({ masterclass, selected, cupos, onSelect }) {
   const hasRange = Boolean(masterclass.startTime && masterclass.endTime)
   return (
     <button
@@ -342,6 +378,7 @@ function MasterclassCard({ masterclass, selected, onSelect }) {
           {masterclass.startTime} – {masterclass.endTime}
         </span>
       )}
+      <CuposBadge cupos={cupos} />
     </button>
   )
 }
@@ -397,7 +434,7 @@ function Header({ config }) {
             El halo es un elemento blanco con blur fuerte (blur-3xl), así sus bordes se deshacen por
             completo y el blanco se funde con el azul sin ninguna arista; mejora la legibilidad de los
             logos oscuros sin verse como una tarjeta. */}
-        <div className="belen-fade-up relative inline-flex items-center justify-center px-6 py-3 sm:px-10">
+        <div className="belen-fade-up relative inline-flex items-center justify-center px-10 py-5 sm:px-16 sm:py-6">
           <span
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 rounded-[50%] bg-white/70 blur-3xl"
@@ -740,6 +777,7 @@ export default function PublicForm() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [errors, setErrors] = useState({})
   const [occupied, setOccupied] = useState(() => new Set())
+  const [masterclassCounts, setMasterclassCounts] = useState({})
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(null)
 
@@ -769,6 +807,17 @@ export default function PublicForm() {
   useEffect(() => {
     const unsubscribe = subscribeOccupiedSlots((next) => setOccupied(next))
     return unsubscribe
+  }, [])
+
+  // --- Cupos ocupados por masterclass (para el contador con sesgo de urgencia) -------------------
+  useEffect(() => {
+    try {
+      const unsubscribe = subscribeMasterclassCounts((counts) => setMasterclassCounts(counts || {}))
+      return unsubscribe
+    } catch (error) {
+      console.error('[PublicForm] subscribeMasterclassCounts', error)
+      return undefined
+    }
   }, [])
 
   const refreshAvailability = useCallback(async () => {
@@ -1394,6 +1443,7 @@ export default function PublicForm() {
                         key={mc.id}
                         masterclass={mc}
                         selected={form.masterclassId === mc.id}
+                        cupos={displayedCupos(mc.cupos, masterclassCounts[mc.id] || 0)}
                         onSelect={(id) => setField('masterclassId', id)}
                       />
                     ))}

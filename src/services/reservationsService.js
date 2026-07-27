@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   onSnapshot,
   orderBy,
   query,
@@ -19,6 +20,7 @@ import {
   COL,
   CONFIG_DOC,
   TICKET_COUNTER_DOC,
+  MASTERCLASS_COUNTER_DOC,
   EMAIL_STATUS,
   ERRORS,
   HOLDER_TYPE,
@@ -342,6 +344,9 @@ export async function deleteAllReservations(onProgress = () => {}) {
     onProgress('Reiniciando el número de las entradas…')
     await setDoc(doc(db, COL.COUNTERS, TICKET_COUNTER_DOC), { next: 1 })
 
+    // Reinicia el contador de cupos de masterclass (todas las reservas se fueron).
+    await setDoc(doc(db, COL.COUNTERS, MASTERCLASS_COUNTER_DOC), {})
+
     return { reservations, tickets, slots, scans }
   } catch (error) {
     console.error('[reservationsService] deleteAllReservations', error)
@@ -490,6 +495,16 @@ export async function approveReservation(reservationId, adminUid) {
 
       transaction.set(counterRef, { next: next + tickets.length }, { merge: true })
 
+      // Cupos de masterclass: si esta reserva eligió una, suma 1 al contador público de esa masterclass
+      // (lo lee el formulario para el contador de urgencia). increment() no requiere lectura previa.
+      if (reservation.masterclassId) {
+        transaction.set(
+          doc(db, COL.COUNTERS, MASTERCLASS_COUNTER_DOC),
+          { [reservation.masterclassId]: increment(1) },
+          { merge: true },
+        )
+      }
+
       const reservationPatch = {
         status: RESERVATION_STATUS.APPROVED,
         approvedAt: serverTimestamp(),
@@ -575,6 +590,14 @@ export async function cancelReservation(id, adminUid) {
     const batch = writeBatch(db)
     batch.delete(doc(db, COL.SLOTS, slotId(reservation.day, reservation.hour, reservation.agentId)))
     ticketIds.forEach((ticketId) => batch.delete(doc(db, COL.TICKETS, ticketId)))
+    // Libera el cupo de masterclass que esta reserva había ocupado al aprobarse.
+    if (reservation.masterclassId) {
+      batch.set(
+        doc(db, COL.COUNTERS, MASTERCLASS_COUNTER_DOC),
+        { [reservation.masterclassId]: increment(-1) },
+        { merge: true },
+      )
+    }
     batch.update(reservationRef, {
       status: RESERVATION_STATUS.CANCELLED,
       ticketIds: [],

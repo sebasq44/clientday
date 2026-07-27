@@ -5,6 +5,7 @@ import {
   CalendarX,
   Check,
   Download,
+  IdCard,
   Inbox,
   Mail,
   Printer,
@@ -31,6 +32,7 @@ import {
   useToast,
 } from '../components/ui'
 import TicketPreview from '../components/TicketPreview'
+import GafetePreview from '../components/GafetePreview'
 
 import { useAuth } from '../hooks/useAuth'
 import { useAgents } from '../hooks/useAgents'
@@ -141,6 +143,70 @@ function PrintArea({ tickets, config }) {
         <div key={ticket.id} className="belen-print-ticket">
           <TicketPreview ticket={ticket} config={config} />
         </div>
+      ))}
+    </div>,
+    document.body,
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Impresión de gafetes                                                 */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Mismo patrón que PRINT_CSS pero con su propio id (#gafete-print-area) para el gafete de
+ * 5.5×8.5 cm. IMPORTANTE: esta regla y la de las entradas NO deben coexistir montadas, porque
+ * cada `body > *:not(#…)` escondería el área de la otra. Por eso GafetePrintArea solo se monta
+ * cuando hay gafetes que imprimir (retorna null si no hay), igual que PrintArea.
+ */
+const GAFETE_PRINT_CSS = `
+#gafete-print-area {
+  position: fixed;
+  top: 0;
+  left: -12000px;
+  width: 900px;
+  opacity: 0;
+  pointer-events: none;
+}
+@media print {
+  /* Hoja A4 vertical; los gafetes se empaquetan VARIOS por hoja (no uno por página). */
+  @page { size: A4 portrait; margin: 8mm; }
+  html, body { margin: 0 !important; }
+  body > *:not(#gafete-print-area) { display: none !important; }
+  #gafete-print-area {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: auto !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    display: flex !important;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    justify-content: flex-start;
+    gap: 5mm;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  /* Tamaño físico EXACTO y bloqueado: 5.5×8.5 cm. flex:0 0 auto evita que el flexbox lo encoja. */
+  #gafete-print-area .gafete {
+    flex: 0 0 auto !important;
+    width: 5.5cm !important;
+    height: 8.5cm !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+`
+
+function GafetePrintArea({ tickets }) {
+  if (typeof document === 'undefined' || !tickets || tickets.length === 0) return null
+
+  return createPortal(
+    <div id="gafete-print-area" aria-hidden="true">
+      <style>{GAFETE_PRINT_CSS}</style>
+      {tickets.map((ticket) => (
+        <GafetePreview key={ticket.id} ticket={ticket} />
       ))}
     </div>,
     document.body,
@@ -275,6 +341,10 @@ export default function AdminReservations() {
 
   const [ticketsTarget, setTicketsTarget] = useState(null)
   const [ticketsState, setTicketsState] = useState({ list: [], loading: false, error: '' })
+
+  // Gafetes a imprimir: cuando se llena, se monta GafetePrintArea (fuera de pantalla) y, tras
+  // pintarse los QR, se dispara window.print(); se limpia al terminar para desmontar el área.
+  const [gafeteTickets, setGafeteTickets] = useState([])
 
   // Borrado masivo de reservas de prueba (solo superadmin). Bloquea el modal mientras corre.
   const [deleteAllOpen, setDeleteAllOpen] = useState(false)
@@ -553,6 +623,47 @@ export default function AdminReservations() {
     }
   }
 
+  /**
+   * Imprimir gafete(s) de una reserva aprobada. Carga sus entradas (1 titular + 0-1 acompañante),
+   * monta el área oculta de gafetes y, tras un breve margen para que los QR queden pintados, abre
+   * el diálogo de impresión. Al terminar limpia el estado para desmontar el área (así su @media
+   * print nunca choca con el de las entradas).
+   */
+  const handlePrintGafete = async (reservation) => {
+    setBusy({ id: reservation.id, action: 'gafete' })
+    toast.info('Preparando gafete…')
+
+    // Garantiza que el área de impresión de ENTRADAS quede desmontada: si ambas coexistieran,
+    // sus reglas @media print (cada una oculta a la otra) dejarían la hoja en blanco.
+    setTicketsTarget(null)
+
+    let tickets
+    try {
+      tickets = await getTicketsByReservation(reservation.id)
+    } catch (err) {
+      setBusy(NO_BUSY)
+      toast.error(err?.message || 'No se pudieron cargar las entradas de esta reserva.')
+      return
+    }
+
+    if (!tickets || tickets.length === 0) {
+      setBusy(NO_BUSY)
+      toast.error('Esta reserva no tiene entradas emitidas para generar el gafete.')
+      return
+    }
+
+    // Monta el área: GafetePreview genera el QR async con un useEffect.
+    setGafeteTickets(tickets)
+
+    // Margen para asegurar que el QR esté pintado antes de abrir el diálogo de impresión.
+    window.setTimeout(() => {
+      setBusy(NO_BUSY)
+      window.print()
+      // Desmonta el área tras imprimir para no chocar con el @media print de las entradas.
+      window.setTimeout(() => setGafeteTickets([]), 200)
+    }, 500)
+  }
+
   const handleExportExcel = () => {
     if (filtered.length === 0) {
       toast.info('No hay reservas que exportar con los filtros actuales.')
@@ -728,6 +839,19 @@ export default function AdminReservations() {
       return (
         <div className={containerClass}>
           {viewTicketsButton}
+
+          {/* Gafete físico: solo superadmin y agente (seguridad ya salió arriba con solo lectura). */}
+          <Button
+            size={size}
+            className={buttonClass}
+            variant="secondary"
+            icon={IdCard}
+            loading={isBusy(reservation.id, 'gafete')}
+            disabled={busy.id === reservation.id}
+            onClick={() => handlePrintGafete(reservation)}
+          >
+            Imprimir gafete
+          </Button>
 
           {canResend && (
             <Button
@@ -1468,6 +1592,9 @@ export default function AdminReservations() {
 
       {/* Copia oculta de las entradas: es lo único que sale por la impresora. */}
       <PrintArea tickets={ticketsState.list} config={config} />
+
+      {/* Copia oculta de los gafetes: se monta solo mientras se imprime (evita chocar con la de entradas). */}
+      <GafetePrintArea tickets={gafeteTickets} />
     </div>
   )
 }

@@ -153,3 +153,52 @@ export async function sendInvitation(reservation, tickets, config) {
     return { ok: false, sent: 0, error: message }
   }
 }
+
+/**
+ * Avisa por correo a los administradores configurados (config.notifyAdmins) que ALGUIEN acaba de
+ * registrar su ENTRADA. Se dispara desde el escáner tras un check-in. Es «disparar y olvidar»: no
+ * bloquea ni interrumpe el escaneo si falla; solo deja el error en consola.
+ *
+ * @param {object} ticket   la entrada recién escaneada (holderName, clientCode, companyName, serial)
+ * @param {object} config   config/general (de ahí sale notifyAdmins)
+ * @returns {Promise<{ ok: boolean, sent: number, error: string }>}
+ */
+export async function sendScanNotification(ticket, config) {
+  const admins = Array.isArray(config?.notifyAdmins) ? config.notifyAdmins : []
+  const recipients = admins.filter((a) => a && a.email)
+
+  // Sin destinatarios o sin URL configurada: no es un error, simplemente no hay a quién avisar.
+  if (recipients.length === 0 || !isEmailConfigured()) {
+    return { ok: true, sent: 0, error: '' }
+  }
+
+  try {
+    const payload = {
+      secret: APPS_SCRIPT_SECRET,
+      type: 'scan_notice',
+      admins: recipients.map((a) => ({ name: String(a.name || ''), email: String(a.email) })),
+      entry: {
+        holderName: String(ticket?.holderName || ''),
+        clientCode: String(ticket?.clientCode || ''),
+        companyName: String(ticket?.companyName || ''),
+        serial: String(ticket?.serial || ''),
+      },
+    }
+
+    const response = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+    })
+    const raw = await response.text()
+    const data = JSON.parse(raw)
+    if (!data || data.ok !== true) {
+      throw new Error(data?.error || 'El servicio de correo no aceptó la notificación.')
+    }
+    return { ok: true, sent: Number(data.sent) || recipients.length, error: '' }
+  } catch (error) {
+    // No interrumpimos la fila de la puerta por un aviso: solo lo registramos.
+    console.error('[emailService] sendScanNotification', error)
+    return { ok: false, sent: 0, error: error?.message || 'No se pudo enviar la notificación.' }
+  }
+}

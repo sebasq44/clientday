@@ -57,8 +57,11 @@ la paleta salvo los semánticos de estado (verde/rojo/ámbar) listados en §7.
   masterclassEnabled: true,            // bool — si false, se oculta la pregunta de masterclass
   masterclasses: [                     // array — lista informativa que el cliente elige si asiste
     // `day` = id de un día del evento (o '' para cualquier día). El formulario solo muestra al cliente
-    // las masterclasses de su día elegido (más las sin día).
-    { id: 'mc-1', name: 'Empaque sostenible', day: '2026-09-08', startTime: '10:00', endTime: '11:00' }
+    // las masterclasses de su día elegido (más las sin día). `cupos` = cupos máximos (0 = sin límite).
+    { id: 'mc-1', name: 'Empaque sostenible', day: '2026-09-08', startTime: '10:00', endTime: '11:00', cupos: 100 }
+  ],
+  notifyAdmins: [                      // array — reciben un correo automático en CADA entrada escaneada
+    { name: 'Gerencia', email: 'gerencia@empaquesbelen.com' }
   ],
   days: [                              // array — editable desde el admin
     { id: '2026-09-08', label: '8 Septiembre', letter: 'M', enabled: true },
@@ -198,6 +201,18 @@ El canje de comida **no altera** `status`: entrada/salida y comida son ejes inde
 
 **Premio (`prizeAt`)**: se puede marcar a quien está `inside` **o** `exited` (asistió), para permitir
 registrarlo después del evento. Un premio ya marcado se puede desmarcar (corrección de errores).
+
+### `counters/masterclasses` — cupos de masterclass ocupados
+
+```js
+{ 'mc-1': 12, 'mc-2': 5 }   // { [masterclassId]: nº de reservas APROBADAS con esa masterclass }
+```
+
+Se **incrementa** al aprobar una reserva con masterclass y se **decrementa** al cancelarla (ambos
+dentro de la misma transacción/batch, con `increment()`). **Lectura pública**: el formulario lo lee
+para el contador de cupos con "sesgo de urgencia" (`displayedCupos` en constants.js: muestra como
+máximo el 70% del total como disponible hasta que lo real baje de ahí). Es solo informativo, NO
+bloquea reservas.
 
 ### `counters/tickets` — correlativo del serial
 

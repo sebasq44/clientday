@@ -12,10 +12,14 @@ export const DEFAULT_CONFIG = {
   masterclassEnabled: true,
   // Lista de masterclasses que el cliente elige en el formulario si asiste. Es informativa
   // (aparece en el boleto y el correo); no impone bloqueos. La administra el superadmin en Ajustes.
+  // `cupos` = cupos máximos (0 = sin límite). El formulario muestra un contador con sesgo de urgencia.
   masterclasses: [
-    { id: 'mc-1', name: 'Empaque sostenible', day: '2026-09-08', startTime: '10:00', endTime: '11:00' },
-    { id: 'mc-2', name: 'Tendencias de mercado', day: '2026-09-09', startTime: '12:00', endTime: '13:00' },
+    { id: 'mc-1', name: 'Empaque sostenible', day: '2026-09-08', startTime: '10:00', endTime: '11:00', cupos: 100 },
+    { id: 'mc-2', name: 'Tendencias de mercado', day: '2026-09-09', startTime: '12:00', endTime: '13:00', cupos: 100 },
   ],
+  // Administradores que reciben un correo automático cada vez que se registra una ENTRADA.
+  // Solo nombre + correo. Se administran en Ajustes.
+  notifyAdmins: [],
   days: [
     { id: '2026-09-08', label: '8 Septiembre', letter: 'M', enabled: true },
     { id: '2026-09-09', label: '9 Septiembre', letter: 'K', enabled: true },

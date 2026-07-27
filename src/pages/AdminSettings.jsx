@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Clock,
   GraduationCap,
+  Mail,
   Plus,
   RefreshCw,
   Save,
@@ -33,6 +34,8 @@ import { clean, formatDateTime, formatMasterclass } from '../lib/format'
 
 const HOUR_RE = /^([01]\d|2[0-3]):[0-5]\d$/
 const DAY_ID_RE = /^\d{4}-\d{2}-\d{2}$/
+// Mismo criterio de formato que usa configService.sanitizeNotifyAdmins.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
 const MONTHS = [
   'Enero',
@@ -114,6 +117,11 @@ function pickEditable(config) {
       startTime: mc.startTime ?? '',
       endTime: mc.endTime ?? '',
       day: mc.day ?? '',
+      cupos: Number(mc.cupos) || 0,
+    })),
+    notifyAdmins: (config.notifyAdmins || []).map((admin) => ({
+      name: admin.name ?? '',
+      email: admin.email ?? '',
     })),
     days: (config.days || []).map((day) => ({
       id: day.id ?? '',
@@ -459,7 +467,7 @@ export default function AdminSettings() {
       ...current,
       masterclasses: [
         ...current.masterclasses,
-        { id: newMasterclassId(), name: '', startTime: '', endTime: '', day: '' },
+        { id: newMasterclassId(), name: '', startTime: '', endTime: '', day: '', cupos: 0 },
       ],
     }))
   }
@@ -468,6 +476,31 @@ export default function AdminSettings() {
     setDraftSafe((current) => ({
       ...current,
       masterclasses: current.masterclasses.filter((_, i) => i !== index),
+    }))
+  }
+
+  // -------------------------------------- Administradores a notificar (lista editable)
+
+  const setNotifyAdmin = (index, patch) => {
+    setDraftSafe((current) => ({
+      ...current,
+      notifyAdmins: current.notifyAdmins.map((admin, i) =>
+        i === index ? { ...admin, ...patch } : admin,
+      ),
+    }))
+  }
+
+  const addNotifyAdmin = () => {
+    setDraftSafe((current) => ({
+      ...current,
+      notifyAdmins: [...current.notifyAdmins, { name: '', email: '' }],
+    }))
+  }
+
+  const removeNotifyAdmin = (index) => {
+    setDraftSafe((current) => ({
+      ...current,
+      notifyAdmins: current.notifyAdmins.filter((_, i) => i !== index),
     }))
   }
 
@@ -493,6 +526,11 @@ export default function AdminSettings() {
       startTime: clean(mc.startTime),
       endTime: clean(mc.endTime),
       day: clean(mc.day),
+      cupos: Number(mc.cupos) || 0,
+    })),
+    notifyAdmins: draft.notifyAdmins.map((admin) => ({
+      name: clean(admin.name),
+      email: clean(admin.email).toLowerCase(),
     })),
     days: draft.days.map((day) => ({
       id: clean(day.id),
@@ -505,7 +543,7 @@ export default function AdminSettings() {
   })
 
   const validate = (payload) => {
-    const next = { days: {}, masterclasses: {} }
+    const next = { days: {}, masterclasses: {}, notifyAdmins: {} }
     const messages = []
 
     if (!payload.eventName) {
@@ -557,6 +595,17 @@ export default function AdminSettings() {
       if (Object.keys(mcErrors).length > 0) {
         next.masterclasses[index] = mcErrors
         messages.push(`Revisa la masterclass ${index + 1} de la lista.`)
+      }
+    })
+
+    // Administradores a notificar: la lista puede quedar vacía y las filas sin correo se ignoran
+    // al guardar; pero si una fila trae correo, debe tener un formato válido.
+    payload.notifyAdmins.forEach((admin, index) => {
+      if (admin.email && !EMAIL_RE.test(admin.email)) {
+        next.notifyAdmins[index] = {
+          email: 'Escribe un correo válido, por ejemplo nombre@empresa.com.',
+        }
+        messages.push(`Revisa el administrador ${index + 1} de la lista.`)
       }
     })
 
@@ -1048,7 +1097,7 @@ export default function AdminSettings() {
                   className="rounded-2xl bg-belen-cream/60 p-3 ring-1 ring-belen-blue/10"
                 >
                   <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
-                    <div className="xl:col-span-4">
+                    <div className="xl:col-span-3">
                       <Input
                         label="Nombre"
                         value={mc.name}
@@ -1097,7 +1146,24 @@ export default function AdminSettings() {
                       />
                     </div>
 
-                    <div className="flex items-end justify-end xl:col-span-1">
+                    <div className="flex items-end gap-2 xl:col-span-2">
+                      <div className="min-w-0 flex-1">
+                        <Input
+                          label="Cupos"
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          value={mc.cupos || ''}
+                          onChange={(event) => {
+                            const raw = event.target.value
+                            setMasterclass(index, {
+                              cupos: raw === '' ? 0 : Math.max(0, Math.trunc(Number(raw)) || 0),
+                            })
+                          }}
+                          placeholder="0"
+                        />
+                      </div>
+
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1132,10 +1198,98 @@ export default function AdminSettings() {
         )}
 
         <div className="mt-4 flex gap-3 rounded-xl bg-belen-cream/70 p-3 ring-1 ring-belen-blue/10">
+          <Ticket className="mt-0.5 h-5 w-5 shrink-0 text-belen-orange" aria-hidden="true" />
+          <p className="min-w-0 text-sm leading-snug text-slate-500">
+            Los cupos se muestran en el formulario con un indicador de disponibilidad.{' '}
+            <strong className="text-belen-ink">0 = sin límite</strong> (no se muestra contador).
+          </p>
+        </div>
+
+        <div className="mt-3 flex gap-3 rounded-xl bg-belen-cream/70 p-3 ring-1 ring-belen-blue/10">
           <GraduationCap className="mt-0.5 h-5 w-5 shrink-0 text-belen-blue/60" aria-hidden="true" />
           <p className="min-w-0 text-sm leading-snug text-slate-500">
             La masterclass es solo informativa: aparece en el boleto del cliente y en el correo de
-            confirmación, pero no reserva cupos ni impone bloqueos de horario.
+            confirmación, pero no impone bloqueos de horario.
+          </p>
+        </div>
+      </Card>
+
+      {/* 4c ----------------------------------------------- Administradores a notificar */}
+      <Card
+        title="Administradores a notificar"
+        subtitle="Reciben un correo automático cada vez que alguien registra su entrada en el evento."
+        action={
+          <Button variant="secondary" size="sm" icon={Plus} onClick={addNotifyAdmin}>
+            Agregar administrador
+          </Button>
+        }
+      >
+        {draft.notifyAdmins.length === 0 ? (
+          <EmptyState
+            icon={Mail}
+            title="Sin administradores configurados"
+            description="Agrega a las personas que deben recibir un aviso por correo cuando un cliente registra su entrada en la puerta."
+            action={
+              <Button icon={Plus} onClick={addNotifyAdmin}>
+                Agregar administrador
+              </Button>
+            }
+          />
+        ) : (
+          <ul className="space-y-3">
+            {draft.notifyAdmins.map((admin, index) => {
+              const adminErrors = errors.notifyAdmins?.[index] || {}
+
+              return (
+                <li
+                  key={`notify-admin-${index}`}
+                  className="rounded-2xl bg-belen-cream/60 p-3 ring-1 ring-belen-blue/10"
+                >
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-12">
+                    <div className="xl:col-span-5">
+                      <Input
+                        label="Nombre"
+                        value={admin.name}
+                        onChange={(event) => setNotifyAdmin(index, { name: event.target.value })}
+                        placeholder="Carlos Martínez"
+                      />
+                    </div>
+
+                    <div className="xl:col-span-6">
+                      <Input
+                        label="Correo"
+                        type="email"
+                        value={admin.email}
+                        onChange={(event) => setNotifyAdmin(index, { email: event.target.value })}
+                        error={adminErrors.email}
+                        placeholder="carlos@empaquesbelen.com"
+                      />
+                    </div>
+
+                    <div className="flex items-end justify-end xl:col-span-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={Trash2}
+                        onClick={() => removeNotifyAdmin(index)}
+                        aria-label={`Quitar al administrador ${admin.name || admin.email || index + 1}`}
+                        className="mb-1 text-red-600 hover:bg-red-50 active:bg-red-100"
+                      />
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+
+        <div className="mt-4 flex gap-3 rounded-xl bg-belen-cream/70 p-3 ring-1 ring-belen-blue/10">
+          <Mail className="mt-0.5 h-5 w-5 shrink-0 text-belen-blue/60" aria-hidden="true" />
+          <p className="min-w-0 text-sm leading-snug text-slate-500">
+            Cada vez que se registra una entrada en el escáner, estas personas reciben un correo del
+            tipo «Hola {'{'}nombre{'}'}, acaba de ingresar {'{'}cliente{'}'} (código …) en la entrada
+            principal». Deja la lista vacía si no quieres enviar avisos. El nombre es opcional; el
+            correo debe tener un formato válido.
           </p>
         </div>
       </Card>

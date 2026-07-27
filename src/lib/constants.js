@@ -12,6 +12,29 @@ export const COL = {
 }
 
 export const CONFIG_DOC = 'general'
+// Documento con el conteo de cupos de masterclass ocupados: counters/masterclasses = { [id]: n }.
+// Lectura pública (el formulario lo necesita para el contador de urgencia).
+export const MASTERCLASS_COUNTER_DOC = 'masterclasses'
+
+// --- Cupos de masterclass: sesgo de "urgencia" ---
+// Se muestra como máximo el 70% del total como disponible; solo cuando lo REAL disponible baja de ese
+// 70% se empieza a enseñar la cifra real. Ej. con max=100: siempre "70 de 100" hasta que de verdad
+// queden 70 libres (30 ocupados), y de ahí en adelante la cifra real.
+export const CUPOS_URGENCY_RATIO = 0.7
+
+/**
+ * Calcula los cupos a MOSTRAR de una masterclass con el sesgo de urgencia.
+ * @param {number} max    cupos máximos configurados (0 o vacío = sin límite → devuelve null)
+ * @param {number} taken  cupos realmente ocupados (reservas aprobadas con esa masterclass)
+ * @returns {{ available:number, max:number, realAvailable:number } | null}
+ */
+export function displayedCupos(max, taken) {
+  const total = Number(max) || 0
+  if (total <= 0) return null // sin límite configurado: no se muestra contador
+  const realAvailable = Math.max(0, total - (Number(taken) || 0))
+  const cap = Math.floor(total * CUPOS_URGENCY_RATIO)
+  return { available: Math.min(realAvailable, cap), max: total, realAvailable }
+}
 export const TICKET_COUNTER_DOC = 'tickets'
 
 // --- Roles de los usuarios del panel ---

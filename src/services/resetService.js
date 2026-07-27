@@ -25,7 +25,7 @@ import {
 } from 'firebase/firestore'
 
 import { db } from '../lib/firebase'
-import { COL, CONFIG_DOC, TICKET_COUNTER_DOC } from '../lib/constants'
+import { COL, CONFIG_DOC, TICKET_COUNTER_DOC, MASTERCLASS_COUNTER_DOC } from '../lib/constants'
 import { DEFAULT_CONFIG } from '../lib/seed'
 
 /** Un lote de Firestore admite 500 operaciones. Dejamos margen. */
@@ -102,6 +102,7 @@ export async function resetEvent(currentUid, onProgress = () => {}) {
 
     onProgress('Reiniciando el número de las entradas…')
     await setDoc(doc(db, COL.COUNTERS, TICKET_COUNTER_DOC), { next: 1 })
+    await setDoc(doc(db, COL.COUNTERS, MASTERCLASS_COUNTER_DOC), {})
 
     onProgress('Listo.')
     return result
