@@ -45,6 +45,7 @@ import {
 
 import edificioImg from '../assets/edificio.webp'
 import logoImg from '../assets/logo.webp'
+import certificadosImg from '../assets/certificados.png'
 
 /* ------------------------------------------------------------------------------------------------
  * Estilos locales de la página
@@ -392,8 +393,25 @@ function Header({ config }) {
       />
 
       <div className="relative mx-auto flex max-w-2xl flex-col items-center px-4 text-center">
+        {/* Certificaciones de la empresa: PNG transparente sobre un HALO blanco muy difuminado.
+            El halo es un elemento blanco con blur fuerte (blur-3xl), así sus bordes se deshacen por
+            completo y el blanco se funde con el azul sin ninguna arista; mejora la legibilidad de los
+            logos oscuros sin verse como una tarjeta. */}
+        <div className="belen-fade-up relative inline-flex items-center justify-center px-6 py-3 sm:px-10">
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 rounded-[50%] bg-white/70 blur-3xl"
+          />
+          <img
+            src={certificadosImg}
+            alt="Certificaciones de Empaques Belén: FSSC 22000, Bandera Azul Ecológica, Esencial Costa Rica y Kosher"
+            className="relative h-24 w-auto max-w-full object-contain sm:h-32"
+            loading="lazy"
+          />
+        </div>
+
         {/* Logo «EMPAQUES belén» sobre una tarjeta blanca para máximo contraste */}
-        <div className="belen-fade-up inline-flex items-center justify-center rounded-2xl bg-white px-6 py-4 shadow-card ring-1 ring-white/60">
+        <div className="belen-fade-up belen-delay-1 mt-3 inline-flex items-center justify-center rounded-2xl bg-white px-6 py-4 shadow-card ring-1 ring-white/60">
           <img
             src={logoImg}
             alt="Empaques Belén"

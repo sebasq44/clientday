@@ -304,6 +304,55 @@ export async function migrateReservationsToAgent(fromAgentId, toAgentId) {
   return { moved, slotConflicts }
 }
 
+/** Borra TODOS los documentos de una colección, en lotes. Devuelve cuántos borró. */
+async function deleteEntireCollection(collectionName) {
+  const snapshot = await getDocs(collection(db, collectionName))
+  let deleted = 0
+  for (let i = 0; i < snapshot.docs.length; i += 400) {
+    const batch = writeBatch(db)
+    for (const d of snapshot.docs.slice(i, i + 400)) batch.delete(d.ref)
+    await batch.commit()
+    deleted += Math.min(400, snapshot.docs.length - i)
+  }
+  return deleted
+}
+
+/**
+ * Borra TODAS las reservas y sus datos asociados (entradas, bloqueos de horario y bitácora de
+ * escaneos) y reinicia el correlativo de seriales a 1. CONSERVA la configuración, los asesores,
+ * los clientes y los usuarios del panel. Pensado para limpiar reservas de prueba sin reiniciar todo.
+ *
+ * @param {(step: string) => void} [onProgress]
+ * @returns {Promise<{ reservations, tickets, slots, scans }>}
+ */
+export async function deleteAllReservations(onProgress = () => {}) {
+  try {
+    onProgress('Borrando la bitácora de escaneos…')
+    const scans = await deleteEntireCollection(COL.SCANS)
+
+    onProgress('Borrando las entradas y códigos QR…')
+    const tickets = await deleteEntireCollection(COL.TICKETS)
+
+    onProgress('Liberando los horarios ocupados…')
+    const slots = await deleteEntireCollection(COL.SLOTS)
+
+    onProgress('Borrando las reservas…')
+    const reservations = await deleteEntireCollection(COL.RESERVATIONS)
+
+    onProgress('Reiniciando el número de las entradas…')
+    await setDoc(doc(db, COL.COUNTERS, TICKET_COUNTER_DOC), { next: 1 })
+
+    return { reservations, tickets, slots, scans }
+  } catch (error) {
+    console.error('[reservationsService] deleteAllReservations', error)
+    throw new Error(
+      'No se pudieron borrar todas las reservas: ' +
+        (error?.message || 'error desconocido') +
+        '. Puede que se hayan borrado parcialmente; inténtalo de nuevo.',
+    )
+  }
+}
+
 /**
  * Suscripción en tiempo real a las reservas, de la más reciente a la más antigua.
  *

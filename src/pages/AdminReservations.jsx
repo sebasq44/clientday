@@ -12,6 +12,7 @@ import {
   Search,
   Send,
   Ticket,
+  Trash2,
   TriangleAlert,
   UserPlus,
   X,
@@ -40,6 +41,7 @@ import {
   approveReservation,
   assignReservationAgent,
   cancelReservation,
+  deleteAllReservations,
   rejectReservation,
 } from '../services/reservationsService'
 import { getTicketsByReservation } from '../services/ticketsService'
@@ -273,6 +275,11 @@ export default function AdminReservations() {
 
   const [ticketsTarget, setTicketsTarget] = useState(null)
   const [ticketsState, setTicketsState] = useState({ list: [], loading: false, error: '' })
+
+  // Borrado masivo de reservas de prueba (solo superadmin). Bloquea el modal mientras corre.
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
+  const [deleteProgress, setDeleteProgress] = useState('')
 
   const emailReady = isEmailConfigured()
 
@@ -606,6 +613,30 @@ export default function AdminReservations() {
     )
   }
 
+  /**
+   * Borrado masivo (solo superadmin): limpia reservas de prueba sin reiniciar el sistema.
+   * Conserva configuración, asesores, clientes y usuarios. Bloquea el cierre del modal
+   * mientras corre; la lista se refresca sola por la suscripción en vivo.
+   */
+  const handleDeleteAll = async () => {
+    setDeletingAll(true)
+    setDeleteProgress('Preparando…')
+    try {
+      const result = await deleteAllReservations((step) => setDeleteProgress(step))
+      setDeleteAllOpen(false)
+      toast.success(
+        `Se borraron ${result.reservations} ${
+          result.reservations === 1 ? 'reserva' : 'reservas'
+        } y sus datos (${result.tickets} entradas, ${result.slots} horarios liberados).`,
+      )
+    } catch (err) {
+      toast.error(err?.message || 'No se pudieron borrar las reservas.')
+    } finally {
+      setDeletingAll(false)
+      setDeleteProgress('')
+    }
+  }
+
   /* ---------- acciones por fila (compartidas entre tabla y tarjetas) ---------- */
 
   // Función (no componente) a propósito: así los botones no se remontan en cada render.
@@ -872,6 +903,17 @@ export default function AdminReservations() {
               >
                 Exportar a Excel
               </Button>
+              {isSuperAdmin && (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  icon={Trash2}
+                  onClick={() => setDeleteAllOpen(true)}
+                  disabled={isLoading}
+                >
+                  Borrar todas las reservas
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -1378,6 +1420,50 @@ export default function AdminReservations() {
             ))}
           </div>
         )}
+      </Modal>
+
+      {/* -------- Modal: borrar todas las reservas (solo superadmin) -------- */}
+      <Modal
+        open={deleteAllOpen}
+        onClose={() => {
+          if (!deletingAll) setDeleteAllOpen(false)
+        }}
+        title="Borrar todas las reservas"
+        size="md"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeleteAllOpen(false)} disabled={deletingAll}>
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              icon={Trash2}
+              loading={deletingAll}
+              onClick={handleDeleteAll}
+            >
+              Sí, borrar todo
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex items-start gap-3 rounded-2xl bg-red-50 px-4 py-3 ring-1 ring-red-200">
+            <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-600" aria-hidden="true" />
+            <p className="text-sm leading-snug text-red-700">
+              Se borrarán <span className="font-semibold">TODAS</span> las reservas, sus entradas
+              (QR), los horarios ocupados y la bitácora de escaneos, y la numeración de entradas
+              volverá a empezar en 1. <span className="font-semibold">NO</span> se tocan los
+              asesores, los clientes ni la configuración. Esta acción no se puede deshacer.
+            </p>
+          </div>
+
+          {deletingAll && (
+            <div className="flex items-center gap-3 rounded-2xl bg-belen-cream/70 px-4 py-3 ring-1 ring-belen-blue/10">
+              <Spinner size="sm" />
+              <p className="text-sm font-medium text-belen-ink">{deleteProgress || 'Borrando…'}</p>
+            </div>
+          )}
+        </div>
       </Modal>
 
       {/* Copia oculta de las entradas: es lo único que sale por la impresora. */}
